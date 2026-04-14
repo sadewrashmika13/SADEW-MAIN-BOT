@@ -8,50 +8,69 @@ const https = require("https");
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const BASE_URL = "https://cinesubz.co";
 const SEARCH_URL = `${BASE_URL}/?s=`;
-const MAX_DOWNLOAD_MB = 1000; // Render free tier safe limit
+const MAX_DOWNLOAD_MB = 1000;
 
-// Session storage (in-memory)
+// Session storage
 const sessions = {};
 
-// Helper: Search movies
+// Helper: Search movies with better error handling
 async function searchMovies(query) {
     try {
+        console.log(`[CineSubz] Searching for: ${query}`);
         const { data } = await axios.get(SEARCH_URL + encodeURIComponent(query), {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': BASE_URL,
+            },
             httpsAgent,
-            timeout: 15000
+            timeout: 20000
         });
+        
         const $ = cheerio.load(data);
         const results = [];
 
-        $("article, .result-item, .ml-item, .item").each((i, el) => {
-            const title = $(el).find("h2, .tit, .title, .film-name").first().text().trim() ||
-                          $(el).find("a[title]").first().attr("title") || "";
-            const link = $(el).find("a").first().attr("href") || "";
-            if (title && link && link.includes("cinesubz")) {
+        // Try multiple selectors that CineSubz actually uses
+        $("article, .result-item, .movie-item, .film-item, .post").each((i, el) => {
+            const titleElem = $(el).find("h2 a, h3 a, .title a, .film-title a");
+            const title = titleElem.text().trim() || $(el).find("a[title]").attr("title") || "";
+            let link = titleElem.attr("href") || $(el).find("a").first().attr("href") || "";
+            
+            if (title && link && !link.startsWith("http")) {
+                link = BASE_URL + link;
+            }
+            if (title && link && (link.includes("cinesubz") || link.includes(BASE_URL))) {
                 results.push({ title, link });
             }
         });
 
+        // Fallback: look for any link containing /movies/
         if (results.length === 0) {
             $("a[href*='/movies/']").each((i, el) => {
-                const href = $(el).attr("href") || "";
+                let href = $(el).attr("href");
                 const text = $(el).text().trim();
-                if (href && text && !results.find(r => r.link === href)) {
-                    results.push({ title: text, link: href });
+                if (href && text) {
+                    if (href.startsWith("/")) href = BASE_URL + href;
+                    if (!results.find(r => r.link === href)) {
+                        results.push({ title: text, link: href });
+                    }
                 }
             });
         }
 
         // Deduplicate
         const seen = new Set();
-        return results.filter(r => {
+        const unique = results.filter(r => {
             if (seen.has(r.link)) return false;
             seen.add(r.link);
             return true;
         }).slice(0, 10);
+
+        console.log(`[CineSubz] Found ${unique.length} results for "${query}"`);
+        return unique;
     } catch (err) {
-        console.error("Search error:", err.message);
+        console.error(`[CineSubz] Search error for "${query}":`, err.message);
         return [];
     }
 }
@@ -60,18 +79,24 @@ async function searchMovies(query) {
 async function getDownloadOptions(movieUrl) {
     try {
         const { data } = await axios.get(movieUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': BASE_URL,
+            },
             httpsAgent,
             timeout: 20000
         });
         const $ = cheerio.load(data);
-        const title = $("h1, h2").first().text().trim() || "Movie";
+        const title = $("h1.entry-title, h1.title, h1").first().text().trim() || "Movie";
         const options = [];
 
         // Look for direct MP4 links
         $("a[href]").each((i, el) => {
-            const href = $(el).attr("href") || "";
-            const text = $(el).text().trim().toLowerCase();
+            const href = $(el).attr("href");
+            const text = $(el).text().toLowerCase();
+            if (!href) return;
+            
+            // Direct video links
             if (href.includes(".mp4") || href.includes("token=") || href.includes("sume321")) {
                 let quality = "Standard";
                 if (text.includes("1080p") || href.includes("1080p")) quality = "1080p FHD";
@@ -79,34 +104,38 @@ async function getDownloadOptions(movieUrl) {
                 else if (text.includes("480p") || href.includes("480p")) quality = "480p SD";
                 options.push({ label: `${quality} [Direct]`, url: href, type: "direct" });
             }
+            // Telegram links
             else if (href.includes("t.me") || href.includes("telegram")) {
-                let quality = "Telegram";
-                options.push({ label: quality, url: href, type: "telegram" });
+                options.push({ label: "Telegram Link", url: href, type: "telegram" });
             }
         });
 
-        // If no options, look for buttons with download class
+        // If no options, look for download buttons
         if (options.length === 0) {
-            $("a.dwn-btn, a.dl-btn, a[class*='download']").each((i, el) => {
-                const href = $(el).attr("href") || "";
+            $("a.download-btn, a.dl-btn, a[class*='download'], a[href*='download']").each((i, el) => {
+                const href = $(el).attr("href");
                 if (href && href.startsWith("http")) {
                     options.push({ label: "Download Link", url: href, type: "redirect" });
                 }
             });
         }
 
+        console.log(`[CineSubz] Found ${options.length} download options for "${title}"`);
         return { title, options };
     } catch (err) {
-        console.error("Parse error:", err.message);
+        console.error(`[CineSubz] Parse error for ${movieUrl}:`, err.message);
         return { title: "", options: [] };
     }
 }
 
-// Helper: Stream download file (memory efficient)
+// Helper: Stream download (same as before, but with agent)
 async function streamDownloadToFile(url, destPath) {
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith("https") ? https : require("http");
-        const req = protocol.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, agent: httpsAgent }, (res) => {
+        const req = protocol.get(url, { 
+            headers: { 'User-Agent': 'Mozilla/5.0' }, 
+            agent: httpsAgent 
+        }, (res) => {
             if (res.statusCode === 302 || res.statusCode === 301) {
                 return streamDownloadToFile(res.headers.location, destPath).then(resolve).catch(reject);
             }
@@ -139,36 +168,34 @@ Sparky({
     category: "downloader",
     desc: "Search and download movies from CineSubz"
 }, async ({ m, client, args }) => {
-    const sender = m.jid; // unique chat ID (user or group)
+    const sender = m.jid;
     const query = args ? args.join(" ").trim() : "";
 
-    // Step 3: User replied with a number for quality selection
-    if (!query && sessions[sender]?.step === "quality" && m.body && /^\d+$/.test(m.body.trim())) {
-        return handleQualitySelection(m, client, sender, parseInt(m.body.trim(), 10));
+    // Handle number replies for quality/movie selection
+    const userMsg = m.body ? m.body.trim() : "";
+    if (!query && sessions[sender]?.step === "quality" && /^\d+$/.test(userMsg)) {
+        return handleQualitySelection(m, client, sender, parseInt(userMsg, 10));
+    }
+    if (!query && sessions[sender]?.step === "movie" && /^\d+$/.test(userMsg)) {
+        return handleMovieSelection(m, client, sender, parseInt(userMsg, 10));
     }
 
-    // Step 2: User replied with a number for movie selection
-    if (!query && sessions[sender]?.step === "movie" && m.body && /^\d+$/.test(m.body.trim())) {
-        return handleMovieSelection(m, client, sender, parseInt(m.body.trim(), 10));
-    }
-
-    // Step 1: New search
+    // New search
     if (!query) {
         return await client.sendMessage(m.jid, {
             text: "🎬 *SADEW-MD | CineSubz Downloader*\n\nUsage: `.cinesubz <movie name>`\nExample: `.cinesubz avengers`"
         }, { quoted: m });
     }
 
-    await client.sendMessage(m.jid, { text: `🔍 Searching CineSubz for: *${query}*...` }, { quoted: m });
+    await client.sendMessage(m.jid, { text: `🔍 Searching for *${query}* on CineSubz...` }, { quoted: m });
 
     const results = await searchMovies(query);
     if (results.length === 0) {
         return await client.sendMessage(m.jid, {
-            text: `❌ No results found for "*${query}*". Try different keywords.`
+            text: `❌ No results found for "*${query}*".\n\nPossible reasons:\n- Site may be down or blocking requests\n- Try different spelling\n- Try `.cinesubz batman` as a test`
         }, { quoted: m });
     }
 
-    // Store search results
     sessions[sender] = { step: "movie", results, ts: Date.now() };
 
     let msg = "🚀 *SADEW-MD MOVIE DOWNLOADER*\n━━━━━━━━━━━━━━━━━━━━\n";
@@ -179,15 +206,14 @@ Sparky({
     await client.sendMessage(m.jid, { text: msg }, { quoted: m });
 });
 
-// Handle movie selection
+// Movie selection handler
 async function handleMovieSelection(m, client, sender, num) {
     const sess = sessions[sender];
     if (!sess?.results || num < 1 || num > sess.results.length) {
         return await client.sendMessage(m.jid, { text: "❌ Invalid number. Run `.cinesubz` again." }, { quoted: m });
     }
-
     const movie = sess.results[num - 1];
-    await client.sendMessage(m.jid, { text: `⏳ Loading download options for *${movie.title}*...` }, { quoted: m });
+    await client.sendMessage(m.jid, { text: `⏳ Loading options for *${movie.title}*...` }, { quoted: m });
 
     const { title, options } = await getDownloadOptions(movie.link);
     if (options.length === 0) {
@@ -207,18 +233,16 @@ async function handleMovieSelection(m, client, sender, num) {
     await client.sendMessage(m.jid, { text: msg }, { quoted: m });
 }
 
-// Handle quality selection and download
+// Quality selection and download handler
 async function handleQualitySelection(m, client, sender, num) {
     const sess = sessions[sender];
     if (!sess?.options || num < 1 || num > sess.options.length) {
         return await client.sendMessage(m.jid, { text: "❌ Invalid number. Run `.cinesubz` again." }, { quoted: m });
     }
-
     const opt = sess.options[num - 1];
     const movie = sess.movie;
     delete sessions[sender];
 
-    // Telegram link: just send the link
     if (opt.type === "telegram" || opt.url.includes("t.me")) {
         return await client.sendMessage(m.jid, {
             text: `🚀 *SADEW-MD MOVIE DOWNLOADER*\n━━━━━━━━━━━━━━━━━━━━\n🎬 *${movie.title}*\n📥 ${opt.label}\n\n📲 Telegram Link:\n${opt.url}\n\n━━━━━━━━━━━━━━━━━━━━\n_Powered by SADEW-MD_`
@@ -237,17 +261,13 @@ async function handleQualitySelection(m, client, sender, num) {
         await streamDownloadToFile(opt.url, tmpFile);
         const fileBuffer = fs.readFileSync(tmpFile);
         const fileSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(1);
-
         const caption = `🚀 *SADEW-MD MOVIE DOWNLOADER*\n━━━━━━━━━━━━━━━━━━━━\n🎬 *${movie.title}*\n📥 ${opt.label}\n📦 Size: ${fileSizeMB} MB\n━━━━━━━━━━━━━━━━━━━━\n_Powered by SADEW-MD_`;
-
         await client.sendMessage(m.jid, {
             document: fileBuffer,
             mimetype: "video/mp4",
             fileName: `${safeTitle}.mp4`,
             caption: caption
         }, { quoted: m });
-
-        // Cleanup
         fs.unlinkSync(tmpFile);
     } catch (err) {
         console.error("Download error:", err.message);
@@ -258,7 +278,7 @@ async function handleQualitySelection(m, client, sender, num) {
     }
 }
 
-// Clean old sessions every 10 minutes
+// Session cleanup
 setInterval(() => {
     const now = Date.now();
     for (const key in sessions) {
