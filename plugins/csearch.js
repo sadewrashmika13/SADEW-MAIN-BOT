@@ -10,7 +10,7 @@ command(
     async (message, match) => {
         if (!match) return await message.reply("*Please provide a movie name!*\n_Example: .csearch Maharaja_");
 
-        const API_KEY = " f8deeb99a26a9666731c6b5dede05914c64ab64ca9b4cfeee8859408a3f9ce30"; // අසිත අයියගේ ෆ්‍රී කී එක හෝ ඔයාගේ කී එක මෙතනට දාන්න
+        const API_KEY = "f8deeb99a26a9666731c6b5dede05914c64ab64ca9b4cfeee8859408a3f9ce30"; // අසිත අයියගේ ෆ්‍රී කී එක හෝ ඔයාගේ කී එක මෙතනට දාන්න
         const url = `https://back.asitha.top/api/cinesubz/search?apiKey=${API_KEY}&q=${encodeURIComponent(match)}`;
 
         try {
