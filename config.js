@@ -14,7 +14,7 @@ if (fs.existsSync("config.env")) {
 	});
 }
 
-const DATABASE_URL = process.env.DATABASE_URL || "postgresql://aswin:D6dq0vk1xoQx_OO-Iv4ESQ@rough-doxle-2360.7s5.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"; // Corrected SQLite format
+const DATABASE_URL = process.env.DATABASE_URL || "postgresql://aswin:D6dq0vk1xoQx_OO-Iv4ESQ@rough-doxle-2360.7s5.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full";
 
 if (!DATABASE_URL.startsWith("sqlite://") && !DATABASE_URL.startsWith("postgres://") && !DATABASE_URL.startsWith("postgresql://")) {
 	throw new Error("Invalid DATABASE_URL format. Use 'sqlite://' or 'postgres://'");
@@ -41,13 +41,13 @@ DATABASE.authenticate().then(() => console.log("Database connection established 
 
 module.exports = {
 	VERSION: require("./package.json").version,
-	ALIVE: process.env.ALIVE || "Hello i'm alive",
+	ALIVE: process.env.ALIVE || "Hello I'm *SADEW-MD*, I'm alive now! ⚡", // Alive මැසේජ් එක මාරු කළා
 	ALWAYS_ONLINE: toBool(process.env.ALWAYS_ONLINE || "false"),
 	BGMBOT : toBool(process.env.BGMBOT || "false"),
 	API: "https://api-aswin-sparky.koyeb.app",
-	AUDIO_DATA: process.env.AUDIO_DATA || "X BOT MD;ASWIN SPARKY;https://url.aswinsparky.qzz.io/sparky.jpg",
+	AUDIO_DATA: process.env.AUDIO_DATA || "SADEW-MD;SADEW;https://i.imgur.com/your_bike_photo.jpg", // මෙතනට ඔයාගේ බයික් එකේ ලින්ක් එක දාන්න
 	AUTO_STATUS_VIEW: toBool(process.env.AUTO_STATUS_VIEW || "true"),
-	BOT_INFO: process.env.BOT_INFO || "X-BOT-MD;ASWIN SPARKY;https://url.aswinsparky.qzz.io/sparky.jpg",
+	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https://i.imgur.com/your_bike_photo.jpg", // මෙතනටත් බයික් එකේ ලින්ක් එක දාන්න
 	CALL_BLOCK: toBool(process.env.CALL_BLOCK || "false"),
 	CALL_BLOCK_MSG: process.env.CALL_BLOCK_MSG || "_Calls are not allowed. Please don’t call again!._",
 	DATABASE_URL,
@@ -63,8 +63,8 @@ module.exports = {
 	RENDER_APP_NAME: process.env.RENDER_APP_NAME || process.env.RENDER_NAME || "",
 	LANGUAGE: process.env.LANGUAGE || "english",
 	LOGS: toBool(process.env.LOGS || "false"),
-	MENU_TYPE: process.env.MENU_TYPE || "image", // Menu style: big, small, image, document, text, call, payment
-	MENU_FONT: process.env.MENU_FONT || "tiny", // randomStyle, strikeThrough, wingdings, vaporwave, typewriter, analucia, tildeStrikeThrough, underline, doubleUnderline, slashThrough, sparrow, heartsBetween, arrowBelow, crossAboveBelow, creepify, bubbles, mirror, squares, roundsquares, flip, tiny, createMap, serif_I, manga, ladybug, runes, serif_B, serif_BI, serif_I, fancy1, fancy2, fancy3, fancy4, fancy5, fancy6, fancy7, fancy8, fancy9, fancy10, fancy11, fancy12, fancy13, fancy14, fancy15, fancy16, fancy17, fancy18, fancy19, fancy20, fancy21, fancy22, fancy23, fancy24, fancy25, fancy26, fancy27, fancy28, fancy29, fancy30, fancy31, fancy32, fancy33
+	MENU_TYPE: process.env.MENU_TYPE || "image", 
+	MENU_FONT: process.env.MENU_FONT || "tiny", 
 	PORT: process.env.PORT || 8080,
 	PING: process.env.PING || "Latency",
 	PM_BLOCK: toBool(process.env.PM_BLOCK || "false"),
@@ -73,12 +73,12 @@ module.exports = {
 	REJECT_CALL_MSG: process.env.REJECT_CALL_MSG || "_Calls are not allowed. Please don’t call again!._",
 	SESSION_ID: process.env.SESSION_ID || "",
 	START_MSG: toBool(process.env.START_MSG || "true"),
-	STICKER_DATA: process.env.STICKER_DATA || `X BOT MD;ASWIN SPARKY`,
-	SUDO: process.env.SUDO || "917012984396",
+	STICKER_DATA: process.env.STICKER_DATA || `SADEW-MD;SADEW`, // Sticker branding මාරු කළා
+	SUDO: process.env.SUDO || "947XXXXXXXXX", // මෙතනට ඔයාගේ WhatsApp නම්බර් එක දාන්න (Ex: 94712345678)
 	WORK_TYPE: process.env.WORK_TYPE || "public",
 	SAVE_STATUS: toBool(process.env.SAVE_STATUS || "false"),
-	STATUS_REPLY: toBool(process.env.STATUS_REPLY || "false"),
-	STATUS_REPLY_MSG: process.env.STATUS_REPLY_MSG || "Nice Status Brother 🦫✨",
+	STATUS_REPLY: toBool(process.env.STATUS_REPLY || "true"), // Status වලට reply කරන්න True කළා
+	STATUS_REPLY_MSG: process.env.STATUS_REPLY_MSG || "Nice Status Brother! ✨ - SADEW-MD",
 	STATUS_REACTION: toBool(process.env.STATUS_REACTION || "false"),
 	STATUS_REACTION_EMOJI: process.env.STATUS_REACTION_EMOJI || "🍉,🍓,🎀,💀,💗,📍,🔪,🛒,☠️,🐍,👍🏻",
 	WARN_COUNT: process.env.WARN_COUNT || "3"
