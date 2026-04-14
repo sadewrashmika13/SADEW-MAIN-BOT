@@ -63,7 +63,7 @@ module.exports = {
 	RENDER_APP_NAME: process.env.RENDER_APP_NAME || process.env.RENDER_NAME || "",
 	LANGUAGE: process.env.LANGUAGE || "english",
 	LOGS: toBool(process.env.LOGS || "false"),
-	MENU_TYPE: process.env.MENU_TYPE || "image", 
+	MENU_TYPE: process.env.MENU_TYPE || "text", 
 	MENU_FONT: process.env.MENU_FONT || "tiny", 
 	PORT: process.env.PORT || 8080,
 	PING: process.env.PING || "Latency",
