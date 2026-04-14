@@ -1,8 +1,6 @@
 const { Sparky, isPublic } = require("../lib");
 const fetch = require('node-fetch');
 
-const API_KEY = "f8deeb99a26a9666731c6b5dede05914c64ab64ca9b4cfeee8859408a3f9ce30";
-
 Sparky({
     name: "tiktok",
     fromMe: isPublic,
@@ -19,34 +17,22 @@ Sparky({
 
         await m.react('⏳');
 
-        // Attempt 1: Asitha API
-        let response = await fetch(`https://back.asitha.top/api/tiktok/download?url=${encodeURIComponent(tiktokUrl[0])}&apiKey=${API_KEY}`);
-        let data = await response.json();
+        // New Stable API (No SSL issues)
+        const apiUrl = `https://api.api-kun.xyz/api/tiktok?url=${encodeURIComponent(tiktokUrl[0])}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json();
 
-        // If Asitha API fails, try Attempt 2: Public API
-        if (!data || !data.status || !data.result) {
-            console.log("Asitha API failed, trying fallback...");
-            response = await fetch(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(tiktokUrl[0])}`);
-            data = await response.json();
-            
-            // Checking Fallback result
-            if (data && data.status === 200) {
-                await m.react('⬇️');
-                return await client.sendMessage(m.jid, { 
-                    video: { url: data.result.video.no_watermark }, 
-                    caption: `*TIKTOK DOWNLOADER (Fallback)* ✅\n\n*Title:* ${data.result.title}\n\n*Downloaded by X-BOT-MD*` 
-                }, { quoted: m });
-            }
-            
+        if (!data || !data.data || !data.data.no_wm) {
             await m.react('❌');
-            return await m.reply("Both APIs failed to fetch the video. The video might be private or the API limit is reached.");
+            return await m.reply("Failed to fetch video. The API might be down or video is private.");
         }
 
-        // If Asitha API is successful
         await m.react('⬇️');
+
+        // Sending the Video
         await client.sendMessage(m.jid, { 
-            video: { url: data.result.no_wm || data.result.video_low }, 
-            caption: `*TIKTOK DOWNLOADER* ✅\n\n*Title:* ${data.result.title || 'No Title'}\n*Author:* ${data.result.author || 'Unknown'}\n\n*Downloaded by X-BOT-MD*` 
+            video: { url: data.data.no_wm }, 
+            caption: `*TIKTOK DOWNLOADER* ✅\n\n*Title:* ${data.data.title || 'No Title'}\n\n*Downloaded by X-BOT-MD*` 
         }, { quoted: m });
 
         await m.react('✅');
