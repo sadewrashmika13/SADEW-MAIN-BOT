@@ -4,7 +4,6 @@ const https = require("https");
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Helper function: safely extract string URL from any field
 function getStringUrl(field) {
     if (!field) return null;
     if (typeof field === 'string') return field;
@@ -46,7 +45,9 @@ Sparky({
     }
 
     await m.react('🔄');
-    let successSent = false;
+
+    // Flag to track if we already sent a final response (video or error)
+    let finalResponseSent = false;
 
     try {
         const resolvedUrl = await resolveUrl(url);
@@ -62,7 +63,6 @@ Sparky({
         let title = "Facebook Video";
 
         if (data) {
-            // Parsing Logic with safe extraction
             if (data.result) {
                 if (data.result.media) {
                     videoUrl = getStringUrl(data.result.media.video_hd) || getStringUrl(data.result.media.video_sd);
@@ -73,18 +73,21 @@ Sparky({
                 if (!videoUrl) videoUrl = getStringUrl(data.result.video);
                 if (data.result.title && title === "Facebook Video") title = data.result.title;
             }
-            
             if (!videoUrl && data.data) {
                 videoUrl = getStringUrl(data.data) || getStringUrl(data.data.url) || getStringUrl(data.data.download);
                 if (data.data.title && title === "Facebook Video") title = data.data.title;
             }
-            
             if (!videoUrl) videoUrl = getStringUrl(data.url) || getStringUrl(data.download) || getStringUrl(data.video);
             if (data.title && title === "Facebook Video") title = data.title;
         }
 
         if (!videoUrl || !videoUrl.startsWith('http')) {
-            throw new Error("Invalid Video URL");
+            finalResponseSent = true;
+            await m.react('❌');
+            await client.sendMessage(m.jid, {
+                text: "❌ Could not get video URL. The video may be private, deleted, or the API is down."
+            }, { quoted: m });
+            return;
         }
 
         await m.react('⬇️');
@@ -92,27 +95,28 @@ Sparky({
         const senderName = m.pushName || m.name || "User";
         const caption = `🚀 *SADEW-MD FB DOWNLOADER*\n\n📝 *Title:* ${title}\n\n*Requested by:* ${senderName}`;
 
+        // Send video – this is the main response
         await client.sendMessage(m.jid, {
             video: { url: videoUrl },
             mimetype: "video/mp4",
             caption: caption
         }, { quoted: m });
 
-        successSent = true;
+        // Mark that we successfully sent the video
+        finalResponseSent = true;
         await m.react('✅');
 
     } catch (error) {
-        if (successSent) {
-            console.log("Success already sent, ignoring background error.");
-            return;
+        // Only send error if we haven't sent any final response yet
+        if (!finalResponseSent) {
+            await m.react('❌');
+            console.error("FB Error:", error.message);
+            let errorMsg = "❌ Could not download the video. Please try again later.";
+            if (error.message.includes("404")) errorMsg = "❌ Video not found or it's private.";
+            await client.sendMessage(m.jid, { text: errorMsg }, { quoted: m });
+        } else {
+            // Video already sent, ignore this error silently
+            console.log("FB: Video sent successfully, ignoring background error:", error.message);
         }
-
-        await m.react('❌');
-        console.error("FB Error:", error.message);
-        
-        let errorMsg = "❌ Could not download the video. Please try again later.";
-        if (error.message.includes("404")) errorMsg = "❌ Video not found or it's private.";
-        
-        await client.sendMessage(m.jid, { text: errorMsg }, { quoted: m });
     }
 });
