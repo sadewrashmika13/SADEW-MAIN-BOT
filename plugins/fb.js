@@ -4,6 +4,14 @@ const https = require("https");
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
+// Helper function: safely extract string URL from any field
+function getStringUrl(field) {
+    if (!field) return null;
+    if (typeof field === 'string') return field;
+    if (typeof field === 'object') return field.url || field.link || null;
+    return null;
+}
+
 async function resolveUrl(url) {
     try {
         const res = await axios.get(url, {
@@ -12,12 +20,10 @@ async function resolveUrl(url) {
             httpsAgent,
             headers: { 'User-Agent': 'Mozilla/5.0' }
         });
-        const finalUrl = res.request?.res?.responseUrl || res.config?.url || url;
-        if (finalUrl && typeof finalUrl === 'string' && finalUrl.startsWith('http')) {
-            return finalUrl;
-        }
-    } catch (e) {}
-    return url;
+        return res.config?.url || url;
+    } catch (e) {
+        return url;
+    }
 }
 
 Sparky({
@@ -40,6 +46,7 @@ Sparky({
     }
 
     await m.react('🔄');
+    let successSent = false;
 
     try {
         const resolvedUrl = await resolveUrl(url);
@@ -55,52 +62,29 @@ Sparky({
         let title = "Facebook Video";
 
         if (data) {
-            // 1. Parsing data.result
+            // Parsing Logic with safe extraction
             if (data.result) {
                 if (data.result.media) {
-                    videoUrl = data.result.media.video_hd || data.result.media.video_sd;
+                    videoUrl = getStringUrl(data.result.media.video_hd) || getStringUrl(data.result.media.video_sd);
                     title = data.result.title || data.result.info?.title || title;
-                } else if (data.result.url) {
-                    videoUrl = data.result.url;
-                    title = data.result.title || title;
-                } else if (data.result.download) {
-                    videoUrl = data.result.download;
-                    title = data.result.title || title;
-                } else if (data.result.video) {
-                    videoUrl = data.result.video;
-                    title = data.result.title || title;
                 }
+                if (!videoUrl) videoUrl = getStringUrl(data.result.url);
+                if (!videoUrl) videoUrl = getStringUrl(data.result.download);
+                if (!videoUrl) videoUrl = getStringUrl(data.result.video);
+                if (data.result.title && title === "Facebook Video") title = data.result.title;
             }
             
-            // 2. Parsing data.data
             if (!videoUrl && data.data) {
-                if (typeof data.data === 'string' && data.data.startsWith('http')) {
-                    videoUrl = data.data;
-                } else if (data.data.url) {
-                    videoUrl = data.data.url;
-                    title = data.data.title || title;
-                } else if (data.data.download) {
-                    videoUrl = data.data.download;
-                    title = data.data.title || title;
-                } else if (Array.isArray(data.data) && data.data[0]?.url) {
-                    videoUrl = data.data[0].url;
-                    title = data.data[0].title || title;
-                }
+                videoUrl = getStringUrl(data.data) || getStringUrl(data.data.url) || getStringUrl(data.data.download);
+                if (data.data.title && title === "Facebook Video") title = data.data.title;
             }
-
-            // 3. Parsing Direct fields (handling nested objects)
-            if (!videoUrl && data.url) videoUrl = typeof data.url === 'string' ? data.url : data.url?.url;
-            if (!videoUrl && data.download) videoUrl = typeof data.download === 'string' ? data.download : data.download?.url || data.download?.link;
-            if (!videoUrl && data.video) videoUrl = typeof data.video === 'string' ? data.video : data.video?.url;
             
+            if (!videoUrl) videoUrl = getStringUrl(data.url) || getStringUrl(data.download) || getStringUrl(data.video);
             if (data.title && title === "Facebook Video") title = data.title;
         }
 
-        if (!videoUrl || (typeof videoUrl === 'string' && !videoUrl.startsWith('http'))) {
-            await m.react('❌');
-            return await client.sendMessage(m.jid, {
-                text: "❌ Could not get video URL. The video may be private, deleted, or the API is down."
-            }, { quoted: m });
+        if (!videoUrl || !videoUrl.startsWith('http')) {
+            throw new Error("Invalid Video URL");
         }
 
         await m.react('⬇️');
@@ -114,14 +98,21 @@ Sparky({
             caption: caption
         }, { quoted: m });
 
+        successSent = true;
         await m.react('✅');
 
     } catch (error) {
+        if (successSent) {
+            console.log("Success already sent, ignoring background error.");
+            return;
+        }
+
         await m.react('❌');
         console.error("FB Error:", error.message);
-        let errorText = error.message.includes("timeout")
-            ? "⏰ Request timeout. Please try again later."
-            : `❌ Error: ${error.message}`;
-        await client.sendMessage(m.jid, { text: errorText }, { quoted: m });
+        
+        let errorMsg = "❌ Could not download the video. Please try again later.";
+        if (error.message.includes("404")) errorMsg = "❌ Video not found or it's private.";
+        
+        await client.sendMessage(m.jid, { text: errorMsg }, { quoted: m });
     }
 });
