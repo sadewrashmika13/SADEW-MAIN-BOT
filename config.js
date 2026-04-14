@@ -41,13 +41,13 @@ DATABASE.authenticate().then(() => console.log("Database connection established 
 
 module.exports = {
 	VERSION: require("./package.json").version,
-	ALIVE: process.env.ALIVE || "Hello I'm *SADEW-MD*, I'm alive now! ⚡",
+	ALIVE: process.env.ALIVE || "Hello I'm *SADEW-MD*, I'm alive now! ⚡\n\n*Owner:* Sadew\n*TikTok:* https://www.tiktok.com/@sadewrashmika36",
 	ALWAYS_ONLINE: toBool(process.env.ALWAYS_ONLINE || "false"),
 	BGMBOT : toBool(process.env.BGMBOT || "false"),
 	API: "https://api-aswin-sparky.koyeb.app",
-	AUDIO_DATA: process.env.AUDIO_DATA || "SADEW-MD;SADEW;https://i.imgur.com/your_image.jpg",
+	AUDIO_DATA: process.env.AUDIO_DATA || "SADEW-MD;SADEW;https://i.imgur.com/vrzBEoB.jpeg",
 	AUTO_STATUS_VIEW: toBool(process.env.AUTO_STATUS_VIEW || "true"),
-	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https://i.imgur.com/your_image.jpg",
+	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https:https://i.imgur.com/vrzBEoB.jpeg";https://www.tiktok.com/@sadewrashmika36",
 	CALL_BLOCK: toBool(process.env.CALL_BLOCK || "false"),
 	CALL_BLOCK_MSG: process.env.CALL_BLOCK_MSG || "_Calls are not allowed. Please don’t call again!._",
 	DATABASE_URL,
