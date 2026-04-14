@@ -47,7 +47,7 @@ module.exports = {
 	API: "https://api-aswin-sparky.koyeb.app",
 	AUDIO_DATA: process.env.AUDIO_DATA || "SADEW-MD;SADEW;https://i.imgur.com/vrzBEoB.jpeg",
 	AUTO_STATUS_VIEW: toBool(process.env.AUTO_STATUS_VIEW || "true"),
-	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https:https://i.imgur.com/vrzBEoB.jpeg";https://www.tiktok.com/@sadewrashmika36",
+	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https://i.imgur.com/vrzBEoB.jpeg;https://www.tiktok.com/@sadewrashmika36",
 	CALL_BLOCK: toBool(process.env.CALL_BLOCK || "false"),
 	CALL_BLOCK_MSG: process.env.CALL_BLOCK_MSG || "_Calls are not allowed. Please don’t call again!._",
 	DATABASE_URL,
