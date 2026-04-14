@@ -1,11 +1,17 @@
 const { Sparky, isPublic } = require("../lib");
 const fetch = require('node-fetch');
+const https = require('https');
+
+// SSL Certificate check එක අයින් කිරීමට (මෙය අර error එක නවත්වයි)
+const agent = new https.Agent({
+  rejectUnauthorized: false
+});
 
 Sparky({
     name: "tiktok",
     fromMe: isPublic,
     category: "download",
-    desc: "Download TikTok videos."
+    desc: "Download TikTok videos (SSL Fix)."
 }, async ({ m, client, args }) => {
     try {
         if (!args) return await m.reply("Please provide a TikTok video URL.");
@@ -17,29 +23,28 @@ Sparky({
 
         await m.react('⏳');
 
-        // New Stable API (No SSL issues)
-        const apiUrl = `https://api.api-kun.xyz/api/tiktok?url=${encodeURIComponent(tiktokUrl[0])}`;
-        const response = await fetch(apiUrl);
+        // මෙතනදී අපි agent එක පාවිච්චි කරනවා අර error එක නොවෙන්න
+        const apiUrl = `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(tiktokUrl[0])}`;
+        const response = await fetch(apiUrl, { agent });
         const data = await response.json();
 
-        if (!data || !data.data || !data.data.no_wm) {
+        if (!data || data.status !== 200) {
             await m.react('❌');
-            return await m.reply("Failed to fetch video. The API might be down or video is private.");
+            return await m.reply("Could not fetch video. Please try another link.");
         }
 
         await m.react('⬇️');
 
-        // Sending the Video
         await client.sendMessage(m.jid, { 
-            video: { url: data.data.no_wm }, 
-            caption: `*TIKTOK DOWNLOADER* ✅\n\n*Title:* ${data.data.title || 'No Title'}\n\n*Downloaded by X-BOT-MD*` 
+            video: { url: data.result.video.no_watermark }, 
+            caption: `*TIKTOK DOWNLOADER* ✅\n\n*Title:* ${data.result.title || 'No Title'}\n\n*Downloaded by X-BOT-MD*` 
         }, { quoted: m });
 
         await m.react('✅');
 
     } catch (error) {
         await m.react('❌');
-        console.error("TikTok Plugin Error:", error);
-        return await m.reply("An error occurred: " + error.message);
+        console.error("TikTok Error:", error);
+        return await m.reply("An error occurred. Check Render logs for details.");
     }
 });
