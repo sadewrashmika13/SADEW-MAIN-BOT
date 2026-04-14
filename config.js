@@ -41,13 +41,13 @@ DATABASE.authenticate().then(() => console.log("Database connection established 
 
 module.exports = {
 	VERSION: require("./package.json").version,
-	ALIVE: process.env.ALIVE || "Hello I'm *SADEW-MD*, I'm alive now! ⚡", // Alive මැසේජ් එක මාරු කළා
+	ALIVE: process.env.ALIVE || "Hello I'm *SADEW-MD*, I'm alive now! ⚡",
 	ALWAYS_ONLINE: toBool(process.env.ALWAYS_ONLINE || "false"),
 	BGMBOT : toBool(process.env.BGMBOT || "false"),
 	API: "https://api-aswin-sparky.koyeb.app",
-	AUDIO_DATA: process.env.AUDIO_DATA || "SADEW-MD;SADEW;https://i.imgur.com/your_bike_photo.jpg", // මෙතනට ඔයාගේ බයික් එකේ ලින්ක් එක දාන්න
+	AUDIO_DATA: process.env.AUDIO_DATA || "SADEW-MD;SADEW;https://i.imgur.com/your_image.jpg",
 	AUTO_STATUS_VIEW: toBool(process.env.AUTO_STATUS_VIEW || "true"),
-	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https://i.imgur.com/your_bike_photo.jpg", // මෙතනටත් බයික් එකේ ලින්ක් එක දාන්න
+	BOT_INFO: process.env.BOT_INFO || "SADEW-MD;SADEW;https://i.imgur.com/your_image.jpg",
 	CALL_BLOCK: toBool(process.env.CALL_BLOCK || "false"),
 	CALL_BLOCK_MSG: process.env.CALL_BLOCK_MSG || "_Calls are not allowed. Please don’t call again!._",
 	DATABASE_URL,
@@ -73,11 +73,11 @@ module.exports = {
 	REJECT_CALL_MSG: process.env.REJECT_CALL_MSG || "_Calls are not allowed. Please don’t call again!._",
 	SESSION_ID: process.env.SESSION_ID || "",
 	START_MSG: toBool(process.env.START_MSG || "true"),
-	STICKER_DATA: process.env.STICKER_DATA || `SADEW-MD;SADEW`, // Sticker branding මාරු කළා
-	SUDO: process.env.SUDO || "947XXXXXXXXX", // මෙතනට ඔයාගේ WhatsApp නම්බර් එක දාන්න (Ex: 94712345678)
+	STICKER_DATA: process.env.STICKER_DATA || `SADEW-MD;SADEW`,
+	SUDO: process.env.SUDO || "94743862820",
 	WORK_TYPE: process.env.WORK_TYPE || "public",
 	SAVE_STATUS: toBool(process.env.SAVE_STATUS || "false"),
-	STATUS_REPLY: toBool(process.env.STATUS_REPLY || "true"), // Status වලට reply කරන්න True කළා
+	STATUS_REPLY: toBool(process.env.STATUS_REPLY || "true"),
 	STATUS_REPLY_MSG: process.env.STATUS_REPLY_MSG || "Nice Status Brother! ✨ - SADEW-MD",
 	STATUS_REACTION: toBool(process.env.STATUS_REACTION || "false"),
 	STATUS_REACTION_EMOJI: process.env.STATUS_REACTION_EMOJI || "🍉,🍓,🎀,💀,💗,📍,🔪,🛒,☠️,🐍,👍🏻",
