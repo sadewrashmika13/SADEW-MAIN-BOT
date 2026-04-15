@@ -4,8 +4,8 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: "0 */6 * * *" # සෑම පැය 6කට වරක්ම restart වේ
-  workflow_dispatch: # ඕනෑම වෙලාවක අතින් start කිරීමට
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,12 +22,11 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          npm install --force
           npm install -g pm2
-          npm install
 
       - name: Start SADEW-MD
         run: |
           npm start
         env:
           SESSION_ID: ${{ secrets.SESSION_ID }}
-          # තව variables ඇත්නම් ඒවා මෙතන පහළට ඇඩ් කරන්න
