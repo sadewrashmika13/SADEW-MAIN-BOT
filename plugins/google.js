@@ -8,21 +8,28 @@ Sparky({
     desc: "Search Google without API key"
 }, async ({ client, m, args }) => {
     try {
-        const query = args.join(" ");
-        if (!query) return await m.reply("*🔍 මොනවා ගැනද හොයන්න ඕනේ? (උදා: .google Sri Lanka)*");
+        // args එක string එකක්ද array එකක්ද කියලා බලලා හරියට සකස් කිරීම
+        let query = Array.isArray(args) ? args.join(" ") : (typeof args === 'string' ? args : "");
+        
+        // මීට අමතරව message එකෙන් කෙලින්ම text එක ගැනීම (Backup එකක් විදිහට)
+        if (!query) {
+            query = m.body ? m.body.split(" ").slice(1).join(" ") : "";
+        }
+
+        if (!query || query.trim() === "") {
+            return await m.reply("*🔍 මොනවා ගැනද හොයන්න ඕනේ? (උදා: .google Sri Lanka)*");
+        }
 
         await m.reply("*⏳ හොයමින් පවතී... පොඩ්ඩක් ඉන්න.*");
 
-        // API නැතිව Google එකෙන් දත්ත ගැනීම
-        const results = await googleIt({ query: query });
+        const results = await googleIt({ query: query.trim() });
 
         if (!results || results.length === 0) {
             return await m.reply("*❌ ප්‍රතිඵල කිසිවක් හමුවුණේ නැහැ.*");
         }
 
-        let msg = `*🌐 Google සෙවුම් ප්‍රතිඵල: ${query}*\n\n`;
+        let msg = `*🌐 Google සෙවුම් ප්‍රතිඵල: ${query.trim()}*\n\n`;
         
-        // මුල් ප්‍රතිඵල 5 පමණක් පෙන්වීම
         for (let i = 0; i < Math.min(5, results.length); i++) {
             msg += `*${i + 1}. ${results[i].title}*\n`;
             msg += `📝 ${results[i].snippet}\n`;
@@ -33,6 +40,6 @@ Sparky({
         
     } catch (e) {
         console.error(e);
-        return await m.reply("*❌ සෙවුම අසාර්ථකයි. පසුව නැවත උත්සාහ කරන්න.*");
+        return await m.reply("*❌ සෙවුම අසාර්ථකයි: " + e.message + "*");
     }
 });
