@@ -5,7 +5,7 @@ Sparky({
     name: "gpt",
     category: "ai",
     fromMe: isPublic,
-    desc: "Chat with AI"
+    desc: "Chat with AI (Working)"
 }, async ({ client, m, args }) => {
     try {
         const text = m.quoted 
@@ -13,17 +13,16 @@ Sparky({
             : (Array.isArray(args) ? args.join(" ") : args);
 
         if (!text || text.trim() === "") {
-            return m.reply("*Example: .gpt What is AI?*");
+            return m.reply("*Example: .gpt hi*");
         }
 
         await client.sendPresenceUpdate("composing", m.jid);
 
-        // FREE AI API (no key)
-        const res = await axios.get("https://api.affiliateplus.xyz/api/chatbot", {
+        // ✅ NEW WORKING API
+        const res = await axios.get(`https://api.simsimi.vn/v2/simtalk`, {
             params: {
-                message: text,
-                ownername: "Sadew",
-                botname: "Sparky-AI"
+                text: text,
+                lc: "en"
             },
             timeout: 15000
         });
@@ -38,6 +37,11 @@ Sparky({
 
     } catch (e) {
         console.log(e);
-        return m.reply("*⚠️ AI error ekak awa. Passe try karanna.*");
+
+        if (e.code === "ENOTFOUND") {
+            return m.reply("*🌐 Server eka reach karanna ba (API down).*");
+        }
+
+        return m.reply("*⚠️ AI error ekak awa.*");
     }
 });
