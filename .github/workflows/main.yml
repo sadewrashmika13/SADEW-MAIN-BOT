@@ -1,7 +1,7 @@
 name: SADEW-MD-WORKFLOW
 
 on:
-  workflow_dispatch: # දැන් වැඩ කරන්නේ ඔයා Manual run කළොත් විතරයි. පරණ ඒවා නවතීවි.
+  workflow_dispatch: # <--- මේක විතරක් තිබුණම ඇති. එතකොට ඔයා manual run කරන එක විතරයි වැඩ කරන්නේ.
 
 jobs:
   build:
@@ -26,4 +26,4 @@ jobs:
           npm start
         env:
           SESSION_ID: ${{ secrets.SESSION_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # <--- මේක තමයි අඩුව! දැන් API එක වැඩ කරයි.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
