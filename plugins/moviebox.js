@@ -1,18 +1,3 @@
-/**
- * ╔══════════════════════════════════════════════╗
- * ║     SADEW-MD — MovieBoxPro Downloader       ║
- * ║     X-BOT-MD v3.7.0 | Node.js              ║
- * ╚══════════════════════════════════════════════╝
- *
- * Command : .moviebox <movie/anime name>
- * API     : https://api.asith.md/moviepro
- *
- * FIXES (from DeepSeek review):
- *   ✅ require path  : '../lib/command'  (not '../command')
- *   ✅ cmd signature : (conn, mek, m, { from, quoted, reply, args, q })
- *   ✅ API parsing   : data is a direct array, not { status, result }
- */
-
 const { cmd, commands } = require('../lib/command');   // ✅ FIXED PATH
 const { fetchJson }     = require('../lib/functions');
 const axios             = require('axios');
