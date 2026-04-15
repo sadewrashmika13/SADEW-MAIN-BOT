@@ -3,61 +3,76 @@ const axios = require("axios");
 const config = require("../config.js");
 
 Sparky({
-    name: "ai",
-    category: "ai",
-    fromMe: isPublic,
-    desc: "Chat with Gemini AI (Stable Version)"
+    name: "ai",
+    category: "ai",
+    fromMe: isPublic,
+    desc: "Chat with Gemini AI (Ultimate Stable)"
 }, async ({ client, m, args }) => {
-    try {
-        // Get user text properly
-        const text = m.quoted 
-            ? m.quoted.text 
-            : (Array.isArray(args) ? args.join(" ") : args);
+    try {
+        // Get message
+        const text = m.quoted 
+            ? m.quoted.text 
+            : (Array.isArray(args) ? args.join(" ") : args);
 
-        // Empty check
-        if (!text || text.trim() === "") {
-            return m.reply("*හලෝ සජාන! මම Gemini 🤖 ඔයාට මොනවද දැනගන්න ඕනේ?*");
-        }
+        if (!text || text.trim() === "") {
+            return m.reply("*🤖 හලෝ! මට ප්‍රශ්නයක් කියන්න.*");
+        }
 
-        // Get API key
-        const apiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
-        if (!apiKey) {
-            return m.reply("*❌ GEMINI_API_KEY එක set කරලා නෑ (GitHub Secrets check කරන්න).*");
-        }
+        // API KEY
+        const apiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
+        if (!apiKey) {
+            return m.reply("*❌ GEMINI_API_KEY එක දාලා නෑ.*");
+        }
 
-        // Typing effect
-        await client.sendPresenceUpdate('composing', m.jid);
+        // typing effect
+        await client.sendPresenceUpdate('composing', m.jid);
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
+        // function to call API
+        const callGemini = async (model) => {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            
+            return await axios.post(url, {
+                contents: [{ parts: [{ text }] }]
+            }, { timeout: 20000 });
+        };
 
-        const response = await axios.post(apiUrl, {
-            contents: [{ parts: [{ text }] }]
-        }, {
-            timeout: 20000
-        });
+        let response;
 
-        // Safe response handling
-        let aiReply = response?.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        // 🔥 TRY MULTIPLE MODELS (NO FAIL SYSTEM)
+        try {
+            response = await callGemini("gemini-1.5-flash-latest");
+        } catch (e1) {
+            try {
+                response = await callGemini("gemini-1.5-flash");
+            } catch (e2) {
+                try {
+                    response = await callGemini("gemini-1.0-pro");
+                } catch (e3) {
+                    console.log("All models failed");
+                    return m.reply("*❌ AI service වැඩ කරන්නේ නෑ. API key හරි නැතිවෙලා හෝ access නෑ.*");
+                }
+            }
+        }
 
-        if (!aiReply) {
-            return m.reply("*❌ Gemini response එකක් ලැබුණේ නෑ. API limit හරි error එකක් වෙන්න පුළුවන්.*");
-        }
+        // get reply safely
+        let aiReply = response?.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        // Clean formatting
-        aiReply = aiReply.replace(/\*\*/g, "*");
+        if (!aiReply) {
+            return m.reply("*❌ Gemini reply එකක් ලැබුණේ නෑ.*");
+        }
 
-        // Limit long messages (WhatsApp safe)
-        aiReply = aiReply.substring(0, 4000);
+        // clean + limit
+        aiReply = aiReply.replace(/\*\*/g, "*").substring(0, 4000);
 
-        return await m.reply(aiReply);
+        return await m.reply(aiReply);
 
-    } catch (e) {
-        console.log(e);
+    } catch (e) {
+        console.log(e);
 
-        const errorMsg = e.code === 'ECONNABORTED'
-            ? "සර්වර් එක ප්‍රමාදයි (Timeout)"
-            : e?.response?.data?.error?.message || e.message;
+        const errorMsg = e.code === 'ECONNABORTED'
+            ? "⏳ Timeout (server slow)"
+            : e?.response?.data?.error?.message || e.message;
 
-        return m.reply("*⚠️ Error:* " + errorMsg);
-    }
+        return m.reply("*⚠️ Error:* " + errorMsg);
+    }
 });
