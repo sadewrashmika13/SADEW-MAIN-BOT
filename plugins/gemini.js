@@ -1,40 +1,40 @@
-const { cmd, commands } = require('../lib/command'); // ✅ Path එක නිවැරදි කළා
-const { fetchJson } = require('../lib/functions');
+const { cmd, commands } = require('../lib/command');
+const axios = require('axios');
 
 cmd({
     pattern: "gemini",
-    alias: ["ai", "chatgpt", "bot"],
-    desc: "Chat with Gemini AI",
+    alias: ["ai", "chat", "gpt"],
+    desc: "Chat with Gemini AI (SADEW-MD Edition)",
     category: "ai",
-    use: '.gemini <ඔයාට අහන්න ඕන දේ>',
+    use: '.gemini <message>',
     filename: __filename
 },
 async(conn, mek, m, { from, quoted, body, isCmd, command, args, q, reply }) => {
     try {
-        if (!q) return reply("💡 හෙලෝ! මම Gemini AI. ඔයාට දැනගන්න ඕන ඕනෑම දෙයක් මගෙන් අහන්න.\n\nඋදාහරණ: *.ai ලෝකයේ උසම කන්ද කුමක්ද?*");
+        if (!q) return reply("🤖 හෙලෝ සජාන! මම Gemini. ඔයාට මොනවා හරි දැනගන්න ඕනද?\n\nඋදා: *.ai මල්ලි කෙනෙක්ට දෙන උපන් දින සුභ පැතුමක් ලියන්න.*");
 
         // React - Thinking
         try { await m.react('🧠') } catch(e){}
 
-        // Gemini API එකට Request එක යැවීම
-        // මෙහිදී වඩාත් ස්ථාවර API එකක් භාවිතා කර ඇත
-        const apiUrl = `https://api.asith.md/gemini?q=${encodeURIComponent(q)}`;
-        const response = await fetchJson(apiUrl);
+        // මෙන්න මේ පාර මම වඩාත් වේගවත් API එකක් පාවිච්චි කරනවා
+        const response = await axios.get(`https://api.giftedtech.my.id/api/ai/gpt4?apikey=gifted&q=${encodeURIComponent(q)}`);
         
-        if (!response || !response.result) {
-            try { await m.react('❌') } catch(e){}
-            return reply("❌ මට පිළිතුරක් සොයාගන්න අපහසු වුණා. කරුණාකර නැවත උත්සාහ කරන්න.");
+        if (response.data && response.data.result) {
+            await reply(response.data.result);
+            try { await m.react('✨') } catch(e){}
+        } else {
+            // පළවෙනි එක වැඩ නැත්නම් Backup එකක් විදිහට මේක පාවිච්චි කරනවා
+            const backupRes = await axios.get(`https://api.asith.md/gemini?q=${encodeURIComponent(q)}`);
+            if (backupRes.data && backupRes.data.result) {
+                await reply(backupRes.data.result);
+                try { await m.react('✨') } catch(e){}
+            } else {
+                reply("❌ සොරි සජාන, මට මේ වෙලාවේ කනෙක්ට් වෙන්න බැහැ. පොඩ්ඩකින් ආයෙත් ට්‍රයි කරන්න.");
+            }
         }
-
-        // පිළිතුර එවමු
-        await reply(response.result);
-
-        // React - Success
-        try { await m.react('✨') } catch(e){}
 
     } catch (e) {
         console.error(e);
-        try { await m.react('❌') } catch(err){}
-        reply(`❌ Error: ${e.message}`);
+        reply(`❌ Error එකක් ආවා: ${e.message}`);
     }
 });
