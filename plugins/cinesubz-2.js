@@ -1,9 +1,3 @@
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  🎬 SADEW-MD | CineSubz Movie Downloader Plugin
-//  Version: 3.0 (Direct CDN + RAM Optimized)
-//  Engine: Sparky Engine (X-BOT-MD)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 const cheerio = require("cheerio");
@@ -25,8 +19,8 @@ const HEADERS = {
   "Referer": BASE_URL,
 };
 
-// RAM limit for Render Free Tier (512 MB) — keep downloads under 80 MB
-const MAX_DOWNLOAD_MB = 80;
+// RAM limit for Render Free Tier (512 MB) — keep downloads under 2000 MB
+const MAX_DOWNLOAD_MB = 2000;
 
 // ─────────────────────────────────────────────────
 //  HELPER: Search movies on CineSubz
