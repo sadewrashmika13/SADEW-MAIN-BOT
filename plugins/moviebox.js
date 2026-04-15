@@ -1,4 +1,4 @@
-const { cmd, commands } = require('../command')
+const { cmd, commands } = require('../lib/command')  // ✅ Fixed: added /lib/
 const { fetchJson } = require('../lib/functions')
 
 cmd({
@@ -10,9 +10,9 @@ cmd({
 },
 async(conn, mek, m, { from, quoted, body, isCreator, reply, args, q }) => {
     try {
-        if (!q) return reply("❌ *කරුණාකර නම ලබා දෙන්න.*")
+        if (!q) return reply("❌ *Please provide a movie/anime name.*\nExample: .moviebox Naruto")
 
-        // React කරන්න බැරි වුණොත් Error එකක් නොවෙන්න try-catch එකක් ඇතුළේ දාමු
+        // Safe reactions (won't crash bot if reaction fails)
         try { await m.react('🔍') } catch (e) {}
 
         const apiUrl = `https://api.asith.md/moviepro?search=${encodeURIComponent(q)}`
@@ -20,30 +20,21 @@ async(conn, mek, m, { from, quoted, body, isCreator, reply, args, q }) => {
         
         if (!data || data.length === 0 || !data[0]) {
             try { await m.react('❌') } catch (e) {}
-            return reply("❌ ප්‍රතිඵල හමු වුණේ නැහැ.")
+            return reply(`❌ No results found for "*${q}*".`)
         }
 
         const movie = data[0]
-        const caption = `✨ *MOVIEBOX PRO* ✨
+        const caption = `✨ *MOVIEBOX PRO* ✨\n\n📜 *Title:* ${movie.title}\n📅 *Year:* ${movie.year}\n\n📥 *Download:* ${movie.download_link}\n\n*SADEW-MD*`
 
-📜 *Title:* ${movie.title}
-📅 *Year:* ${movie.year}
-🎭 *Genre:* ${movie.genre}
-
-📥 *Download:* ${movie.download_link}
-
-*SADEW-MD*`
-
-        if (movie.thumbnail) {
+        if (movie.thumbnail && movie.thumbnail.startsWith('http')) {
             await conn.sendMessage(from, { image: { url: movie.thumbnail }, caption: caption }, { quoted: mek })
         } else {
             await reply(caption)
         }
 
         try { await m.react('✅') } catch (e) {}
-
     } catch (e) {
-        console.log(e)
+        console.error(e)
         reply(`❌ Error: ${e.message}`)
     }
 })
