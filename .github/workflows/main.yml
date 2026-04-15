@@ -1,0 +1,33 @@
+name: SADEW-MD-WORKFLOW
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: "0 */6 * * *" # සෑම පැය 6කට වරක්ම restart වේ
+  workflow_dispatch: # ඕනෑම වෙලාවක අතින් start කිරීමට
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+
+      - name: Install Dependencies
+        run: |
+          npm install -g pm2
+          npm install
+
+      - name: Start SADEW-MD
+        run: |
+          npm start
+        env:
+          SESSION_ID: ${{ secrets.SESSION_ID }}
+          # තව variables ඇත්නම් ඒවා මෙතන පහළට ඇඩ් කරන්න
