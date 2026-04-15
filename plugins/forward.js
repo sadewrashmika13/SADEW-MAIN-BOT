@@ -7,36 +7,39 @@ Sparky({
     desc: "Forward a quoted message safely"
 }, async ({ client, m, args }) => {
     try {
-        // 1. Check if a message is quoted
         if (!m.quoted) {
             return await client.sendMessage(m.jid, {
-                text: "⚠️ *Please reply to any message* (text, image, video) and type `.forward`"
+                text: "⚠️ *Please reply to a message and type .forward*"
             }, { quoted: m });
         }
 
-        // 2. Determine target JID
         let targetJid = args[0] ? args[0].trim() : m.jid;
         if (!targetJid.includes("@") && !targetJid.includes("g.us")) {
             targetJid = targetJid + "@s.whatsapp.net";
         }
 
-        // 3. Send status
         const statusMsg = await client.sendMessage(m.jid, {
-            text: `⏳ Forwarding to ${targetJid}...`
+            text: `⏳ Forwarding...`
         }, { quoted: m });
 
-        // 4. Forward the quoted message (CORRECT METHOD)
-        await client.sendMessage(targetJid, { forward: m.quoted });
+        // මෙන්න මේ ක්‍රමය පාවිච්චි කරමු - මේක වඩාත් සාර්ථකයි
+        await client.sendMessage(targetJid, { forward: m.quoted.fakeObj ? m.quoted.fakeObj : m.quoted });
 
-        // 5. Update status to success
         await client.sendMessage(m.jid, {
-            text: `✅ Successfully forwarded to ${targetJid}`
+            text: `✅ Forwarded successfully to ${targetJid}`
         }, { edit: statusMsg.key });
 
     } catch (error) {
         console.error("Forward error:", error);
-        await client.sendMessage(m.jid, {
-            text: `❌ Forward failed: ${error.message}`
-        }, { quoted: m });
+        
+        // Backup Method: මැසේජ් එකේ Content එක අරන් යැවීම
+        try {
+            await client.sendMessage(targetJid, { text: m.quoted.text || "" }, { quoted: m.quoted });
+            await client.sendMessage(m.jid, { text: "✅ Forwarded as Text (Backup)" }, { edit: statusMsg.key });
+        } catch (e) {
+            await client.sendMessage(m.jid, {
+                text: `❌ Forward failed: ${error.message}`
+            }, { quoted: m });
+        }
     }
 });
