@@ -4,13 +4,15 @@ const {
     isPublic
 } = require("../lib");
 const {
-    getBuffer
+    getBuffer,
+    getString
 } = require("./pluginsCore");
 const plugins = require("../lib");
 const config = require("../config.js");
 const font = require("@viper-x/fancytext");
 const menust = config.MENU_FONT;
 const style = font[menust];
+const lang = getString('misc');
 const more = String.fromCharCode(8206);
 const readMore = more.repeat(4001);
 const _0x3471ce=_0x4c73;function _0x5149(){const _0x99704b=['HEROKU','PITCHER_API_BASE_URL','PWD','codesandbox','1460490jcYrnC','DIGITALOCEAN','REPLIT','13089848qhFTfM','CLOUDFLARE','GITHUB','TERMUX_VERSION','REPLIT_USER','env','32199750KLjfkJ','18wOomgQ','5701444PXyScu','AZURE','7366gnnTKS','846315zOxTke','RAILWAY','NETLIFY','VPS','AWS','GITHUB_SERVER_URL','DYNO','1131GsaKWJ','SPACE_ID','HUGGINGFACE','KOYEB','CODESANDBOX','RENDER','FLY_IO','5671732abHOue','AZURE_HTTP_FUNCTIONS','DIGITALOCEAN_APP_NAME','CF_PAGES','VERCEL','LINUX','userland'];_0x5149=function(){return _0x99704b;};return _0x5149();}(function(_0x14bc52,_0x9e047e){const _0x5ac994=_0x4c73,_0x256c17=_0x14bc52();while(!![]){try{const _0x1155d4=parseInt(_0x5ac994(0x14a))/0x1+parseInt(_0x5ac994(0x130))/0x2*(-parseInt(_0x5ac994(0x138))/0x3)+parseInt(_0x5ac994(0x13f))/0x4+parseInt(_0x5ac994(0x131))/0x5*(parseInt(_0x5ac994(0x12d))/0x6)+parseInt(_0x5ac994(0x12e))/0x7+parseInt(_0x5ac994(0x126))/0x8+-parseInt(_0x5ac994(0x12c))/0x9;if(_0x1155d4===_0x9e047e)break;else _0x256c17['push'](_0x256c17['shift']());}catch(_0x5dbaeb){_0x256c17['push'](_0x256c17['shift']());}}}(_0x5149,0xd4926));function _0x4c73(_0x3c6eb7,_0x511653){const _0x514924=_0x5149();return _0x4c73=function(_0x4c737c,_0x3e9250){_0x4c737c=_0x4c737c-0x125;let _0x40d9b6=_0x514924[_0x4c737c];return _0x40d9b6;},_0x4c73(_0x3c6eb7,_0x511653);}let SERVER=process[_0x3471ce(0x12b)][_0x3471ce(0x148)]?.['includes'](_0x3471ce(0x145))?_0x3471ce(0x144):process[_0x3471ce(0x12b)][_0x3471ce(0x147)]?.['includes'](_0x3471ce(0x149))?_0x3471ce(0x13c):process['env'][_0x3471ce(0x12a)]?_0x3471ce(0x125):process[_0x3471ce(0x12b)]['AWS_REGION']?_0x3471ce(0x135):process['env'][_0x3471ce(0x129)]?'TERMUX':process['env'][_0x3471ce(0x137)]?_0x3471ce(0x146):process[_0x3471ce(0x12b)]['KOYEB_APP_ID']?_0x3471ce(0x13b):process[_0x3471ce(0x12b)][_0x3471ce(0x136)]?_0x3471ce(0x128):process['env']['RENDER']?_0x3471ce(0x13d):process[_0x3471ce(0x12b)]['RAILWAY_SERVICE_NAME']?_0x3471ce(0x132):process[_0x3471ce(0x12b)][_0x3471ce(0x143)]?_0x3471ce(0x143):process[_0x3471ce(0x12b)][_0x3471ce(0x141)]?_0x3471ce(0x14b):process['env'][_0x3471ce(0x140)]?_0x3471ce(0x12f):process[_0x3471ce(0x12b)][_0x3471ce(0x133)]?_0x3471ce(0x133):process[_0x3471ce(0x12b)]['FLY_IO']?_0x3471ce(0x13e):process['env'][_0x3471ce(0x142)]?_0x3471ce(0x127):process[_0x3471ce(0x12b)][_0x3471ce(0x139)]?_0x3471ce(0x13a):_0x3471ce(0x134);
@@ -19,7 +21,7 @@ Sparky({
     name: "menu",
     category: "misc",
     fromMe: isPublic,
-    desc: "List all available commands"
+    desc: lang.MENU_DESC
 }, async ({
     client,
     m,
@@ -32,8 +34,10 @@ Sparky({
                     return m.reply(style(`*command : ${args.trim()}*\n*description : ${i.desc.toLowerCase()}*`));
                 }
             }
-            return m.reply(style("_oops command not found_"))
+            return m.reply(style(lang.COMMAND_NOT_FOUND))
         } else {
+
+            const menu_lang = getString('menu');
             let [date,
                 time
             ] = new Date().toLocaleString("en-IN", {
@@ -41,14 +45,14 @@ Sparky({
             }).split(",");
             let menu = `╭━━━〔${config.BOT_INFO.split(";")[0].toLowerCase()}〕━━>
 ┃╭━━━━━━━━━━━━━◉
-┃┃•  owner : ${config.BOT_INFO.split(";")[1].toLowerCase()}
-┃┃•  mode : ${config.WORK_TYPE.toLowerCase()}
-┃┃•  prefix : ${m.prefix}
-┃┃•  platform : ${SERVER}
-┃┃•  date : ${date}
-┃┃•  time : ${time}
-┃┃•  uptime : ${await m.uptime()}
-┃┃•  plugins : ${commands.length}
+┃┃•  ${menu_lang.OWNER} : ${config.BOT_INFO.split(";")[1].toLowerCase()}
+┃┃•  ${menu_lang.MODE} : ${config.WORK_TYPE.toLowerCase()}
+┃┃•  ${menu_lang.PREFIX} : ${m.prefix}
+┃┃•  ${menu_lang.PLATFORM} : ${SERVER}
+┃┃•  ${menu_lang.DATE} : ${date}
+┃┃•  ${menu_lang.TIME} : ${time}
+┃┃•  ${menu_lang.UPTIME} : ${await m.uptime()}
+┃┃•  ${menu_lang.PLUGINS} : ${commands.length}
 ┃╰━━━━━━━━━━━━━◉
 ╰━━━━━━━━━━━━━>\n ${readMore}\n\n`;
 
@@ -111,7 +115,7 @@ Sparky({
                         text: style(menu),
                         contextInfo: {
                             externalAdReply: {
-                                title: style(`Hey ${m.pushName}!`),
+                                title: style(menu_lang.TITLE.replace("{}", m.pushName)),
                                 body: style(`${config.BOT_INFO.split(";")[0]}`),
                                 sourceUrl: "https://https://aswinsparky.qzz.io",
                                 mediaType: 1,
@@ -132,7 +136,7 @@ Sparky({
                         text: style(menu),
                         contextInfo: {
                             externalAdReply: {
-                                title: style(`Hey ${m.pushName}!`),
+                                title: style(menu_lang.TITLE.replace("{}", m.pushName)),
                                 body: style(`${config.BOT_INFO.split(";")[0]}`),
                                 sourceUrl: "https://https://aswinsparky.qzz.io",
                                 mediaUrl: "https://https://aswinsparky.qzz.io",
@@ -156,7 +160,7 @@ Sparky({
                         fileLength: "99999999999",
                         contextInfo: {
                             externalAdReply: {
-                                title: style(`Hey ${m.pushName}!`),
+                                title: style(menu_lang.TITLE.replace("{}", m.pushName)),
                                 body: style(`${config.BOT_INFO.split(";")[0]}`),
                                 sourceUrl: "https://https://aswinsparky.qzz.io",
                                 mediaType: 1,
@@ -168,6 +172,7 @@ Sparky({
                     }, {
                         quoted: sperky
                     });
+
                     break;
                 }
                 case 'text': {

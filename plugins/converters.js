@@ -11,7 +11,7 @@ Sparky({
     category: "converters",
   }, async ({ args, m }) => {
     if (!m.quoted) {
-      return m.reply('Reply to an Image/Video/Audio');
+      return m.reply(lang.REPLY_MEDIA || 'Reply to an Image/Video/Audio');
     }
     try {
         await m.react('⏫');
@@ -21,7 +21,7 @@ Sparky({
       m.reply(mediaUrl);
     } catch (error) {
         await m.react('❌');
-      m.reply('An error occurred while uploading the media.');
+      m.reply(lang.ERROR || 'An error occurred while uploading the media.');
     }
   });
 
@@ -29,12 +29,12 @@ Sparky(
   {
     name: "trt",
     fromMe: true,
-    desc: "Translate text to a given language",
+    desc: lang.TRT_DESC,
     category: "converters",
   },
   async ({ client, m, args }) => {
     try {
-      if (!args) return await m.reply('_Reply to any text with lang_\n_Eg : trt ml_');
+      if (!args) return await m.reply(lang.TRT_ALERT);
       const trtxt = m.quoted?.text;
       const trtlang = args;
       const trt = await getJson(`${config.API}/api/search/translate?text=${trtxt}&lang=${trtlang}`)
@@ -50,13 +50,13 @@ Sparky(
         name: "vv",
         fromMe: true,
         category: "converters",
-        desc: "Resends the view Once message"
+        desc: lang.VV_DESC
     },
     async ({
         m, client 
     }) => {
         if (!m.quoted) {
-            return m.reply("_Reply to ViewOnce Message !_");
+            return m.reply(lang.VV_ALERT);
         }
         try {
             m.react("⏫");
@@ -120,7 +120,7 @@ Sparky({
 		args,
 		client
 	}) => {
-		if (!m.quoted || !(m.quoted.message.stickerMessage || m.quoted.message.audioMessage || m.quoted.message.imageMessage || m.quoted.message.videoMessage)) return m.reply('reply to a sticker/audio');
+		if (!m.quoted || !(m.quoted.message.stickerMessage || m.quoted.message.audioMessage || m.quoted.message.imageMessage || m.quoted.message.videoMessage)) return m.reply(lang.TAKE_ALERT);
 		await m.react('⏫');
         if (m.quoted.message.stickerMessage || m.quoted.message.imageMessage || m.quoted.message.videoMessage) {
             args = args || config.STICKER_DATA;
@@ -168,18 +168,18 @@ Sparky({
 			name: "tts",
 			fromMe: isPublic,
 			category: "converters",
-			desc: "text to speech"
+			desc: lang.TTS_DESC
 		},
 		async ({
 			m, client, args
 		}) => {
 			if (!args) {
-				m.reply('_Enter Query!_')
+				m.reply(lang.NEED_QUERY)
 			} else {
 				let [txt,
-					lang] = args.split`:`
+					langCode] = args.split`:`
 				const audio = googleTTS.getAudioUrl(`${txt}`, {
-					lang: lang || "ml",
+					lang: langCode || "ml",
 					slow: false,
 					host: "https://translate.google.com",
 				})
@@ -203,18 +203,18 @@ Sparky(
 			name: "say",
 			fromMe: isPublic,
 			category: "converters",
-			desc: "text to speech"
+			desc: lang.SAY_DESC
 		},
 		async ({
 			m, client, args
 		}) => {
 			if (!args) {
-				m.reply('_Enter Query!_')
+				m.reply(lang.NEED_QUERY)
 			} else {
 				let [txt,
-					lang] = args.split`:`
+					langCode] = args.split`:`
 				const audio = googleTTS.getAudioUrl(`${txt}`, {
-					lang: lang || "en",
+					lang: langCode || "en",
 					slow: false,
 					host: "https://translate.google.com",
 				})
@@ -237,7 +237,7 @@ Sparky(
     name: "doc",
     fromMe: isPublic,
     category: "converters",
-    desc: "Convert replied media to document",
+    desc: lang.DOC_DESC,
   },
   async ({ m, client, args }) => {
     try {
@@ -251,7 +251,7 @@ Sparky(
           m.quoted.message.stickerMessage
         )
       ) {
-        return await m.reply("_Replay to a meadia_");
+        return await m.reply(lang.REPLY_MEDIA);
       }
       await m.react("⏳");
       const buffer = await m.quoted.download();
@@ -284,7 +284,7 @@ Sparky(
     } catch (err) {
       console.log(err);
       await m.react("❌");
-      m.reply("Error converting media 😅");
+      m.reply(lang.ERROR);
     }
   }
 );
@@ -293,13 +293,13 @@ Sparky(
     name: "nondoc",
     fromMe: isPublic,
     category: "converters",
-    desc: "Return document back to original media",
+    desc: lang.NONDOC_DESC,
   },
   async ({ m, client }) => {
     try {
       const quoted = m.quoted;
       if (!quoted || !quoted.message?.documentMessage)
-        return m.reply("_Reply to a document message_");
+        return m.reply(lang.REPLY_DOC);
       const mime = quoted.message.documentMessage.mimetype;
 	  await m.react("⏳");
       const buffer = await quoted.download();
@@ -318,7 +318,7 @@ Sparky(
     } catch (err) {
       console.log(err);
 	  await m.react("❌");
-      m.reply("Error restoring media 😅");
+      m.reply(lang.ERROR);
     }
   }
 );

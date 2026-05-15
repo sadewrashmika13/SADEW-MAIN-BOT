@@ -15,7 +15,7 @@ Sparky({
   name: "yts",
   fromMe: isPublic,
   category: "youtube",
-  desc: "search in youtube"
+  desc: lang.YTS_DESC
 }, async ({ m, client, args }) => {
   if (!args) return await m.reply(lang.NEED_Q);
   if (await isUrl(args)) {
@@ -32,7 +32,7 @@ Sparky({
   name: "ytv",
   fromMe: isPublic,
   category: "youtube",
-  desc: "Find details of a song"
+  desc: lang.YTV_DESC
 },
   async ({
     m, client, args
@@ -40,14 +40,14 @@ Sparky({
     try {
       args = args || m.quoted?.text;
       if (!args) return await m.reply(lang.NEED_URL);
-      if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK);
+      if (!await isUrl(args)) return await m.reply(lang.INVALID_URL);
       await m.react('⬇️');
       const url = await ytv(args);
       await m.sendMsg(m.jid, url, { quoted: m }, "video")
       await m.react('✅');
     } catch (error) {
       await m.react('❌');
-      m.reply(error);
+      m.reply(lang.ERROR);
     }
   });
 
@@ -55,7 +55,7 @@ Sparky({
   name: "yta",
   fromMe: isPublic,
   category: "youtube",
-  desc: "Find details of a song"
+  desc: lang.YTA_DESC
 },
   async ({
     m, client, args
@@ -63,14 +63,14 @@ Sparky({
     try {
       args = args || m.quoted?.text;
       if (!args) return await m.reply(lang.NEED_URL);
-      if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK);
+      if (!await isUrl(args)) return await m.reply(lang.INVALID_URL);
       await m.react('⬇️');
       const url = await yta(args);
       await m.sendMsg(m.jid, url, { quoted: m, mimetype: 'audio/mpeg' }, "audio");
       await m.react('✅');
     } catch (error) {
       await m.react('❌');
-      m.reply(error);
+      m.reply(lang.ERROR);
     }
   });
 
@@ -78,7 +78,7 @@ Sparky({
   name: "play",
   fromMe: isPublic,
   category: "youtube",
-  desc: "play a song"
+  desc: lang.PLAY_DESC
 },
   async ({
     m, client, args
@@ -89,13 +89,13 @@ Sparky({
       await m.react('🔎');
       const play = (await yts(args))[0]
       await m.react('⬇️');
-      await m.reply(`Downloading ${play.title}`)
+      await m.reply(`${lang.WAIT} ${play.title}`)
       const url = await yta(play.url);
       await m.sendMsg(m.jid, url, { quoted: m, mimetype: 'audio/mpeg' }, "audio");
       await m.react('✅');
     } catch (error) {
       await m.react('❌');
-      m.reply(error);
+      m.reply(lang.ERROR);
     }
   });
 
@@ -103,7 +103,7 @@ Sparky({
   name: "song",
   fromMe: isPublic,
   category: "youtube",
-  desc: "play a song"
+  desc: lang.SONG_DESC
 },
   async ({
     m, client, args
@@ -114,12 +114,12 @@ Sparky({
       await m.react('🔎');
       const play = (await yts(args))[0]
       await m.react('⬇️');
-      await m.reply(`Downloading ${play.title}`)
+      await m.reply(`${lang.WAIT} ${play.title}`)
       const url = await yta(play.url);
       await m.sendMsg(m.jid, url, { quoted: m, mimetype: 'audio/mpeg' }, "audio");
       await m.react('✅');
     } catch (error) {
       await m.react('❌');
-      m.reply(error);
+      m.reply(lang.ERROR);
     }
   });
