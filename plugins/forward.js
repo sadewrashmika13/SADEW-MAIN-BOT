@@ -1,35 +1,42 @@
-// commands/forward.js (Sparky Framework සඳහා සකස් කළ version)
-const { Sparky, commands, isPublic } = require("../lib");
+// commands/forward.js - Owner check fixed
+const { Sparky } = require("../lib");
 const config = require("../config");
 
-// ආරක්ෂක සැකසුම් (original code එකේ තිබූ පරිදිම)
+// ආරක්ෂක සැකසුම්
 const SAFETY = {
   MAX_JIDS: 20,
   BASE_DELAY: 2000,
   EXTRA_DELAY: 4000,
 };
 
+// Helper function to check if sender is owner
+function isOwner(sender) {
+  // sender format: "947xxxxxxxx@s.whatsapp.net"
+  let senderNumber = sender.split("@")[0];
+  let sudoList = config.SUDO ? config.SUDO.split(",").map(s => s.trim()) : [];
+  // Also check if sender is the bot's own number? Add if needed
+  return sudoList.includes(senderNumber);
+}
+
 Sparky({
   name: "forward",
   category: "owner",
-  fromMe: false,        // අපිම owner check එක manual කරමු
+  fromMe: false,      // අපිම check කරන නිසා false
   desc: "📨 උපුටා දක්වන ලද පණිවිඩය ගෘප් කිහිපයකට තොග වශයෙන් forward කරයි",
   alias: ["fwd"]
 }, async ({ client, m, args }) => {
   try {
-    // ===== [Owner Check - SUDO numbers එක්ක compare කිරීම] =====
-    const ownerNumbers = config.SUDO ? config.SUDO.split(",").map(s => s.trim()) : [];
-    const isOwnerUser = ownerNumbers.includes(m.sender.split("@")[0]) || m.sender === config.OWNER_NUMBER;
-    if (!isOwnerUser) {
+    // ===== [Owner Check] =====
+    if (!isOwner(m.sender)) {
       return m.reply("*📛 හිමිකරුට පමණක් අවසර*");
     }
 
-    // ===== [Reply එකක් තිබේදැයි පරීක්ෂා කිරීම] =====
+    // ===== [Reply check] =====
     if (!m.quoted) {
       return m.reply("*🍁 කරුණාකර forward කිරීමට අවශ්‍ය පණිවිඩයට reply කරන්න*");
     }
 
-    // ===== [JID Input එක ගැනීම සහ සැකසීම] =====
+    // ===== [JID input එක parse කිරීම] =====
     let jidInput = "";
     if (args && Array.isArray(args)) {
       jidInput = args.join(" ").trim();
@@ -48,7 +55,7 @@ Sparky({
       );
     }
 
-    // JIDs උපුටා ගැනීම (කොමාව හෝ space වලින් වෙන් කළ)
+    // JIDs parse කිරීම
     const rawJids = jidInput.split(/[\s,]+/).filter(j => j.trim().length > 0);
     const validJids = rawJids
       .map(jid => {
@@ -63,14 +70,13 @@ Sparky({
       return m.reply("❌ වලංගු ගෘප් JID කිසිවක් හමු නොවිණි.");
     }
 
-    // ===== [උපුටා දක්වන ලද පණිවිඩයෙන් මාධ්‍ය ලබා ගැනීම] =====
+    // ===== [උපුටා දක්වන ලද පණිවිඩයෙන් content එක ලබා ගැනීම] =====
     const quotedMsg = m.quoted;
-    const mtype = Object.keys(quotedMsg.message)[0];  // e.g., "imageMessage"
+    const mtype = Object.keys(quotedMsg.message)[0];
     let messageContent = {};
 
-    // Media messages හැසිරවීම
+    // Media types
     if (["imageMessage", "videoMessage", "audioMessage", "stickerMessage", "documentMessage"].includes(mtype)) {
-      // Baileys එකේ quoted message එකෙන් buffer එක download කිරීමට ක්‍රමය
       const buffer = await quotedMsg.download();
       const caption = quotedMsg.message[mtype].caption || "";
 
@@ -102,12 +108,12 @@ Sparky({
       let text = quotedMsg.message.conversation || quotedMsg.message.extendedTextMessage?.text;
       messageContent = { text: text };
     }
-    // Unsupported type
+    // Unsupported
     else {
       return m.reply("❌ මෙම පණිවිඩ වර්ගය forward කළ නොහැක. (සහාය නොදක්වයි)");
     }
 
-    // ===== [තොග වශයෙන් සියලු ගෘප් වෙත යැවීම] =====
+    // ===== [තොග වශයෙන් යැවීම] =====
     let successCount = 0;
     const failedJids = [];
 
@@ -117,12 +123,10 @@ Sparky({
         await client.sendMessage(jid, messageContent);
         successCount++;
 
-        // සෑම 10 කට වරක් ප්‍රගති වාර්තාවක් එවන්න
         if ((i + 1) % 10 === 0) {
           await m.reply(`🔄 ගෘප් ${i + 1}/${validJids.length} වෙත යවන ලදී...`);
         }
 
-        // ප්‍රමාදය (rate limit වළක්වන්න)
         const delay = (i + 1) % 10 === 0 ? SAFETY.EXTRA_DELAY : SAFETY.BASE_DELAY;
         await new Promise(resolve => setTimeout(resolve, delay));
       } catch (err) {
@@ -131,7 +135,7 @@ Sparky({
       }
     }
 
-    // ===== [අවසාන වාර්තාව] =====
+    // ===== [වාර්තාව] =====
     let report = `✅ *Forward සම්පූර්ණයි*\n` +
                  `📤 සාර්ථක: ${successCount}/${validJids.length}\n` +
                  `📦 අන්තර්ගතය: ${mtype.replace("Message", "")}\n`;
