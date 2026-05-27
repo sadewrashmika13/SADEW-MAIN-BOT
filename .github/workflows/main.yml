@@ -18,9 +18,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install --legacy-peer-deps --force
+          npm install --legacy-peer-deps
           npm install @google/generative-ai --legacy-peer-deps
-          npm install axios                     # 👈 Added axios
+          npm install axios --legacy-peer-deps
           npm install -g pm2
 
       - name: Start SADEW-MD
