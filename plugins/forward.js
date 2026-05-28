@@ -10,13 +10,11 @@ Sparky({
   name: "forward",
   alias: ["fwd"],
   desc: "Bulk forward media to groups",
-  category: "owner",
+  category: "main", // Public කැටගරි එකකට මාරු කළා
   use: ".fwd <group_jids>"
 }, async ({ client, m, args }) => {
   try {
-    const isOwner = m.isOwner || false;
-    if (!isOwner) return await m.reply("*📛 Owner Only Command*");
-    
+    // Quoted message check (ෆිල්ම් එකට/මැසේජ් එකට රිප්ලයි කරලද බලනවා)
     if (!m.quoted) return await m.reply("*🍁 Please reply to a message*");
 
     let jidInput = "";
