@@ -16,31 +16,22 @@ Sparky({
     args
 }) => {
     try {
-        // ========== FIX: args එක හරියට check කරන්න ==========
-        // args එක array එකක්ද? string එකක්ද? undefinedද? කියලා බලන්න
-        
+        // ========== args හරියට handle කරන්න ==========
         let userInput = "";
-        
-        // args එකේ type එක අනුව handle කරන්න
-        if (args && typeof args === 'object' && Array.isArray(args)) {
-            // args array එකක් නම්
+        if (args && Array.isArray(args)) {
             userInput = args.join(" ").trim();
         } else if (args && typeof args === 'string') {
-            // args string එකක් නම්
             userInput = args.trim();
         } else if (args && typeof args === 'object') {
-            // args object එකක් නම් (උදා: {0: "2"})
             userInput = Object.values(args).join(" ").trim();
         } else {
-            // args එකක් නැත්නම්
             userInput = "";
         }
         
-        // ========== category number එකක් එව්වාද check කරන්න ==========
+        // ========== category number එකක් එව්වාද? ==========
         if (userInput && /^[0-9]+$/.test(userInput)) {
             let selectedNum = parseInt(userInput);
             
-            // categories define කරන්න
             const categoriesList = [
                 { num: 1, name: "DOWNLOAD", icon: "📥", keywords: ["download", "yt", "youtube", "facebook", "fb", "instagram", "ig", "media", "video", "audio", "song", "music"] },
                 { num: 2, name: "AI", icon: "🧠", keywords: ["ai", "chatgpt", "gpt", "gemini", "bard", "chatbot", "ai chat"] },
@@ -54,16 +45,12 @@ Sparky({
             let selectedCat = categoriesList.find(cat => cat.num === selectedNum);
             
             if (selectedCat) {
-                // ඒ category එකට අදාල commands හොයන්න
                 let catCommands = [];
-                
                 if (commands && Array.isArray(commands)) {
                     commands.forEach(cmd => {
                         if (cmd.dontAddCommandList) return;
-                        
                         let cmdName = cmd.name;
                         let cmdNameStr = "";
-                        
                         if (typeof cmdName === 'object' && cmdName && cmdName.source) {
                             let match = cmdName.source.split('\\s*')[1]?.toString().match(/([a-z0-9]+)/i);
                             cmdNameStr = match ? match[1] : "";
@@ -72,17 +59,12 @@ Sparky({
                         } else if (cmdName && typeof cmdName === 'object') {
                             cmdNameStr = Object.values(cmdName)[0] || "";
                         }
-                        
                         let cmdCategory = (cmd.category || "other").toLowerCase();
                         let cmdDesc = (cmd.desc || "").toLowerCase();
-                        
-                        // command එක මේ category එකට අදාලද කියලා check කරන්න
                         let isInCategory = false;
-                        
                         if (cmdCategory === selectedCat.name.toLowerCase()) {
                             isInCategory = true;
                         } else {
-                            // නැත්නම් keywords වලින් check කරන්න
                             for (let kw of selectedCat.keywords) {
                                 if (cmdDesc.includes(kw) || cmdNameStr.includes(kw)) {
                                     isInCategory = true;
@@ -90,16 +72,12 @@ Sparky({
                                 }
                             }
                         }
-                        
                         if (isInCategory && cmdNameStr && cmdNameStr !== "unknown" && cmdNameStr !== "") {
-                            if (!catCommands.includes(cmdNameStr)) {
-                                catCommands.push(cmdNameStr);
-                            }
+                            if (!catCommands.includes(cmdNameStr)) catCommands.push(cmdNameStr);
                         }
                     });
                 }
                 
-                // category menu එක හදන්න
                 let categoryMenu = `
 ╔════════════════════════════╗
 ║     ${selectedCat.icon} ${selectedCat.name} MENU     
@@ -108,7 +86,6 @@ Sparky({
 
 ┌────────────────────────────┐
 `;
-
                 if (catCommands.length > 0) {
                     catCommands.sort().forEach((cmd, idx) => {
                         let num = (idx + 1).toString().padStart(2);
@@ -117,7 +94,6 @@ Sparky({
                 } else {
                     categoryMenu += `│    📭 කිසිදු command එකක් නැත\n`;
                 }
-
                 categoryMenu += `
 └────────────────────────────┘
 
@@ -130,12 +106,11 @@ Sparky({
    ⚡ ${selectedCat.name} SECTION ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
-                
                 return await client.sendMessage(m.jid, { text: categoryMenu }, { quoted: m });
             }
         }
         
-        // ========== ප්‍රධාන මෙනුව (categories list එක) ==========
+        // ========== ප්‍රධාන මෙනුව (IMAGE + CAPTION) ==========
         let uptime = await m.uptime();
         let now = new Date();
         let date = now.toLocaleDateString("en-IN", { timeZone: "Asia/Colombo" });
@@ -209,8 +184,13 @@ Sparky({
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 
-        // main menu එක යවන්න
-        await client.sendMessage(m.jid, { text: mainMenu }, { quoted: m });
+        // 🖼️ ප්‍රධාන මෙනුව IMAGE එකක් + CAPTION එකක් ලෙස යවන්න
+        const menuImageUrl = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1779928206/zanta_media_uploads/n6pgdmmiivooq8ylvrao.jpg";
+        
+        await client.sendMessage(m.jid, {
+            image: { url: menuImageUrl },
+            caption: mainMenu
+        }, { quoted: m });
         
     } catch (e) {
         console.log("Menu error:", e);
