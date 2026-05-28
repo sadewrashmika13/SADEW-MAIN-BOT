@@ -50,9 +50,9 @@ Sparky({
 2️⃣ Menu
 `;
 
-        // Send image with caption (no video/audio)
+        // Send image with caption (using the specific image URL you provided)
         await client.sendMessage(m.jid, {
-            image: { url: config.ALIVE_IMG || "https://i.imgur.com/Q2UNwXR.jpg" },
+            image: { url: "https://res.cloudinary.com/dqlh378fb/image/upload/v1779928206/zanta_media_uploads/n6pgdmmiivooq8ylvrao.jpg" },
             caption: status,
             contextInfo: {
                 mentionedJid: [m.sender],
