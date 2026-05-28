@@ -2,6 +2,15 @@
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
+// Helper to safely get the query string from args
+function getQuery(args) {
+    if (!args) return "";
+    if (Array.isArray(args)) return args.join(" ").trim();
+    if (typeof args === "string") return args.trim();
+    if (typeof args === "object") return Object.values(args).join(" ").trim();
+    return "";
+}
+
 Sparky({
     name: "ss",
     alias: ["screenshot", "webss"],
@@ -10,7 +19,7 @@ Sparky({
     desc: "📸 වෙබ් අඩවියක තිර රුවක් ගන්න"
 }, async ({ client, m, args }) => {
     try {
-        let url = args.join(" ").trim();
+        let url = getQuery(args);
         
         if (!url) {
             return m.reply(`📸 *Website Screenshot*
@@ -37,7 +46,6 @@ Sparky({
         await client.sendPresenceUpdate('composing', m.jid);
         
         // Free screenshot API (no key required)
-        // Using thum.io - completely free, no API key needed
         const screenshotUrl = `https://image.thum.io/get/width/1280/crop/800/${encodeURIComponent(url)}`;
         
         // Try to fetch the screenshot to verify it works
