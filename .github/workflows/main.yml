@@ -21,6 +21,7 @@ jobs:
           npm install --legacy-peer-deps
           npm install @google/generative-ai --legacy-peer-deps
           npm install axios --legacy-peer-deps
+          npm install groq-sdk --legacy-peer-deps   # 👈 එකතු කළා
           npm install -g pm2
 
       - name: Start SADEW-MD
@@ -29,3 +30,4 @@ jobs:
         env:
           SESSION_ID: ${{ secrets.SESSION_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # 👈 එකතු කළා
