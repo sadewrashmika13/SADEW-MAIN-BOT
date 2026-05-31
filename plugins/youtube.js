@@ -1,19 +1,21 @@
 const {
   Sparky,
-  isPublic
+  isPublic,
+  YtInfo,
+  yts
 } = require("../lib");
 const { getString, isUrl } = require('./pluginsCore');
-const axios = require('axios'); // ⚡ වේගවත් බාගැනීම් සහ RAM Streaming සඳහා Axios භාවිතය
+const axios = require('axios');
 const lang = getString('download');
 
-// 🌐 YouTube සර්වර් Speed Limits මඟහැරීමට Headers
+// 🌐 ඩවුන්ලෝඩ් ස්පීඩ් එක උපරිම කිරීමට සහ සර්වර් බ්ලොක් මඟහැරීමට Headers
 const SAFE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "*/*"
 };
 
 // ==========================================
-// 🔎 1. YTS COMMAND (ULTRA FAST SEARCH / INFO)
+// 🔎 1. YTS COMMAND (NATIVE ULTRA-FAST SEARCH)
 // ==========================================
 Sparky({
   name: "yts",
@@ -21,32 +23,20 @@ Sparky({
   category: "youtube",
   desc: "search in youtube"
 }, async ({ m, client, args }) => {
-  const query = Array.isArray(args) ? args.join(" ") : args;
-  if (!query) return await m.reply(lang.NEED_Q);
+  if (!args) return await m.reply(lang.NEED_Q);
   
   await m.react('🔎');
   try {
-    if (await isUrl(query)) {
-      // ලින්ක් එකක් දුන්නොත් ක්ෂණයකින් විස්තර ලබාගැනීම
-      const searchApi = "https://whiteshadow-x-api." + "vercel.app" + "/api/search/yt?q=" + encodeURIComponent(query) + "&apitoken=VK4fry";
-      const res = await axios.get(searchApi, { timeout: 7000 });
-      const video = res.data?.result?.[0] || res.data?.response?.[0];
-      
-      if (!video) return m.reply("_❌ මචං මේ ලින්ක් එකේ විස්තර සොයාගන්න ලැබුණේ නැහැ._");
-      return await client.sendMessage(m.jid, { 
-        image: { url: video.thumbnail || video.image }, 
-        caption: "*title :* " + video.title + "\n*author :* " + (video.author || "Unknown") + "\n*url :* " + query 
-      });
+    if (await isUrl(args)) {
+      const yt = await YtInfo(args);
+      return await client.sendMessage(m.jid, { image: { url: yt.thumbnail }, caption: "*title :* " + yt.title + "\n*author :* " + yt.author + "\n*url :* " + args + "\n*video id :* " + yt.videoId });
     } else {
-      // නමක් දුන්නොත් YouTube සර්ච් කර ලයිස්තුව ලබාදීම
-      const searchApi = "https://whiteshadow-x-api." + "vercel.app" + "/api/search/yt?q=" + encodeURIComponent(query) + "&apitoken=VK4fry";
-      const res = await axios.get(searchApi, { timeout: 7000 });
-      const videos = res.data?.result || res.data?.response || [];
+      // බාහිර API එකක් වෙනුවට බොට්ගේම Local Engine එකෙන් සර්ච් කරන නිසා කිසිම ලැග් එකක් නැත
+      const videos = await yts(args);
+      if (!videos || videos.length === 0) return m.reply("_❌ සර්ච් රිසල්ට් කිසිවක් හමුවුණේ නැහැ._");
       
-      if (videos.length === 0) return m.reply("_❌ මචං සර්ච් රිසල්ට් කිසිවක් හමුවුණේ නැහැ._");
-
-      const result = videos.slice(0, 8).map(video => `*🏷️ Title :* _*${video.title}*_\n*📁 Duration :* _${video.duration || video.timestamp || 'N/A'}_\n*🔗 Link :* _${video.url || video.link}_`);
-      return await m.reply(`\n\n_*Result Of ${query} 🔍*_\n\n` + result.join('\n\n'));
+      const result = videos.slice(0, 8).map(video => `*🏷️ Title :* _*${video.title}*_\n*📁 Duration :* _${video.duration}_\n*🔗 Link :* _${video.url}_`);
+      return await m.reply(`\n\n_*Result Of ${args} 🔍*_\n\n` + result.join('\n\n'));
     }
   } catch (error) {
     await m.react('❌');
@@ -55,7 +45,7 @@ Sparky({
 });
 
 // ==========================================
-// 🎬 2. YTV COMMAND (HIGH SPEED VIDEO DOWNLAOD)
+// 🎬 2. YTV COMMAND (TURBO SPEED VIDEO ENGINE)
 // ==========================================
 Sparky({
   name: "ytv",
@@ -65,22 +55,33 @@ Sparky({
 }, async ({ m, client, args }) => {
     try {
       args = args || m.quoted?.text;
-      const query = Array.isArray(args) ? args.join(" ") : args;
-      if (!query) return await m.reply(lang.NEED_URL);
-      if (!await isUrl(query)) return await m.reply(lang.INVALID_LINK);
+      if (!args) return await m.reply(lang.NEED_URL);
+      if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK);
       
       await m.react('⬇️');
-      
-      // High-Speed Link Extraction
-      const dlApi = "https://whiteshadow-x-api." + "vercel.app" + "/api/download/yt?url=" + encodeURIComponent(query) + "&apitoken=VK4fry";
-      const res = await axios.get(dlApi, { timeout: 10000 });
-      const d = res.data?.result || res.data?.response;
-      let videoUrl = d?.mp4 || d?.download || d?.url || d?.link;
+      let videoUrl = null;
 
-      if (!videoUrl) return m.reply("_❌ වීඩියෝ ඩවුන්ලෝඩ් ලින්ක් එක ලබාගත නොහැක._");
+      // New Active Server 1: Maher Zubair Core Engine
+      try {
+          const res = await axios.get("https://api.maher-zubair.tech" + "/download/ytmp4?url=" + encodeURIComponent(args), { timeout: 8000 });
+          videoUrl = res.data?.result?.link || res.data?.result?.url;
+      } catch (e) { console.log("Video Server 1 down, trying Server 2..."); }
 
-      // ඩිස්ක් එකට නොලියා කෙලින්ම RAM එකට Stream කිරීම
-      const stream = await axios.get(videoUrl, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 35000 });
+      // Backup Server 2: Dreaded Global Downloader
+      if (!videoUrl) {
+          try {
+              const res = await axios.get("https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(args), { timeout: 8000 });
+              videoUrl = res.data?.result?.video || res.data?.result?.download;
+          } catch (e) {}
+      }
+
+      if (!videoUrl) {
+          await m.react('❌');
+          return m.reply("_❌ වීඩියෝ සර්වර්ස් සියල්ලම කාර්යබහුලයි. පසුව උත්සාහ කරන්න!_");
+      }
+
+      // Buffer Streaming directly to RAM
+      const stream = await axios.get(videoUrl, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 45000 });
       const buffer = Buffer.from(stream.data);
 
       await m.react('✅');
@@ -92,7 +93,7 @@ Sparky({
 });
 
 // ==========================================
-// 🎵 3. YTA COMMAND (HIGH QUALITY AUDIO DOWNLOAD)
+// 🎵 3. YTA COMMAND (HIGH QUALITY AUDIO ENGINE)
 // ==========================================
 Sparky({
   name: "yta",
@@ -102,34 +103,32 @@ Sparky({
 }, async ({ m, client, args }) => {
     try {
       args = args || m.quoted?.text;
-      const query = Array.isArray(args) ? args.join(" ") : args;
-      if (!query) return await m.reply(lang.NEED_URL);
-      if (!await isUrl(query)) return await m.reply(lang.INVALID_LINK);
+      if (!args) return await m.reply(lang.NEED_URL);
+      if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK);
       
       await m.react('⬇️');
-      
       let mp3Url = null;
-      // Server 1 Try
+      
+      // New Active Server 1: Maher Zubair Core Engine
       try {
-          const dlApi1 = "https://whiteshadow-x-api." + "vercel.app" + "/api/download/yt?url=" + encodeURIComponent(query) + "&apitoken=VK4fry";
-          const res1 = await axios.get(dlApi1, { timeout: 8000 });
-          const d1 = res1.data?.result || res1.data?.response;
-          mp3Url = d1?.mp3 || d1?.download || d1?.url || d1?.link;
+          const res = await axios.get("https://api.maher-zubair.tech" + "/download/ytmp3?url=" + encodeURIComponent(args), { timeout: 8000 });
+          mp3Url = res.data?.result?.link || res.data?.result?.url;
       } catch (e) {}
 
-      // Server 2 Backup Failover
+      // Backup Server 2: Dreaded Global Downloader
       if (!mp3Url) {
           try {
-              const dlApi2 = "https://api-dark-shan-yt." + "koyeb.app" + "/download/ytmp3?url=" + encodeURIComponent(query);
-              const res2 = await axios.get(dlApi2, { timeout: 8000 });
-              const d2 = res2.data?.result || res2.data?.response;
-              mp3Url = d2?.mp3 || d2?.download || d2?.url || d2?.link;
+              const res = await axios.get("https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(args), { timeout: 8000 });
+              mp3Url = res.data?.result?.audio || res.data?.result?.mp3;
           } catch (e) {}
       }
 
-      if (!mp3Url) return m.reply("_❌ සියලුම ඕඩියෝ සර්වර්ස් කාර්යබහුලයි._");
+      if (!mp3Url) {
+          await m.react('❌');
+          return m.reply("_❌ ඕඩියෝ සර්වර්ස් සියල්ලම කාර්යබහුලයි. පසුව උත්සාහ කරන්න!_");
+      }
 
-      const stream = await axios.get(mp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 30000 });
+      const stream = await axios.get(mp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 35000 });
       const buffer = Buffer.from(stream.data);
 
       await m.react('✅');
@@ -141,65 +140,48 @@ Sparky({
 });
 
 // ==========================================
-// 🚀 4 & 5. PLAY & SONG HYBRID ENGINE (SEARCH + DOWNLOAD COMBO)
+// 🚀 4 & 5. PLAY & SONG HYBRID TUNED ENGINE
 // ==========================================
 const playSongHandler = async ({ m, client, args }) => {
     try {
       args = args || m.quoted?.text;
-      const query = Array.isArray(args) ? args.join(" ") : args;
-      if (!query) return await m.reply(lang.NEED_Q);
+      if (!args) return await m.reply(lang.NEED_Q);
       
       await m.react('🔎');
-      let videoUrl = null;
-      let finalMp3Url = null;
-      let songTitle = query;
-
-      // Stage 1: Fast Search Engine
-      try {
-          const searchApi = "https://whiteshadow-x-api." + "vercel.app" + "/api/search/yt?q=" + encodeURIComponent(query) + "&apitoken=VK4fry";
-          const searchRes = await axios.get(searchApi, { timeout: 6000 });
-          const ytResult = searchRes.data?.result?.[0] || searchRes.data?.response?.[0];
-          videoUrl = ytResult?.url || ytResult?.link;
-          songTitle = ytResult?.title || query;
-          
-          if (videoUrl) await m.reply(`_📥 Downloading: ${songTitle}_`);
-      } catch (err) { console.log("Search 1 failed, bypassing to direct query..."); }
-
-      // Stage 2: Audio Extraction Loop (3 Servers Base)
-      if (videoUrl) {
-          try {
-              const dlApi1 = "https://whiteshadow-x-api." + "vercel.app" + "/api/download/yt?url=" + encodeURIComponent(videoUrl) + "&apitoken=VK4fry";
-              const res1 = await axios.get(dlApi1, { timeout: 8000 });
-              const d1 = res1.data?.result || res1.data?.response;
-              finalMp3Url = d1?.mp3 || d1?.download || d1?.url || d1?.link;
-          } catch (e) {}
-
-          if (!finalMp3Url) {
-              try {
-                  const dlApi2 = "https://api-dark-shan-yt." + "koyeb.app" + "/download/ytmp3?url=" + encodeURIComponent(videoUrl);
-                  const res2 = await axios.get(dlApi2, { timeout: 8000 });
-                  const d2 = res2.data?.result || res2.data?.response;
-                  finalMp3Url = d2?.mp3 || d2?.download || d2?.url || d2?.link;
-              } catch (e) {}
-          }
+      
+      // 100% Stable Local Search - කිසිලෙසකවත් ටයිම්අවුට් නොවේ
+      const searchList = await yts(args);
+      if (!searchList || searchList.length === 0) {
+          await m.react('❌');
+          return m.reply("_❌ මචං ඔය නමින් සින්දුවක් YouTube එකෙන් හොයාගන්න ලැබුණේ නැහැ!_");
       }
+      
+      const play = searchList[0];
+      await m.reply(`_*📥 Downloading:* ${play.title}_`);
+      await m.react('⬇️');
 
-      // Backup Engine 3 (Direct Query Scraper)
+      let finalMp3Url = null;
+
+      // Server 1 Fetch
+      try {
+          const res = await axios.get("https://api.maher-zubair.tech" + "/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 8000 });
+          finalMp3Url = res.data?.result?.link || res.data?.result?.url;
+      } catch (e) {}
+
+      // Server 2 Fetch (Fallback)
       if (!finalMp3Url) {
           try {
-              const dlApi3 = "https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(query);
-              const res3 = await axios.get(dlApi3, { timeout: 10000 });
-              const d3 = res3.data?.result || res3.data?.response;
-              finalMp3Url = d3?.audio || d3?.mp3 || d3?.download || d3?.url;
+              const res = await axios.get("https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(play.url), { timeout: 8000 });
+              finalMp3Url = res.data?.result?.audio || res.data?.result?.mp3;
           } catch (e) {}
       }
 
       if (!finalMp3Url) {
           await m.react('❌');
-          return m.reply("_❌ සින්දුව බාගන්න ලැබුනේ නැහැ. සියලුම සර්වර්ස් කාර්යබහුලයි!_");
+          return m.reply("_❌ සින්දුව ඩවුන්ලෝඩ් කරගන්න ලැබුනේ නැහැ, සර්වර්ස් ඩවුන්! පොඩ්ඩකින් ආයෙ ට්‍රැයි කරන්න._");
       }
 
-      // Stage 3: Streaming buffer directly to RAM
+      // Fast Stream to RAM Buffer
       const audioStream = await axios.get(finalMp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 35000 });
       const audioBuffer = Buffer.from(audioStream.data);
 
@@ -211,6 +193,5 @@ const playSongHandler = async ({ m, client, args }) => {
     }
 };
 
-// Play සහ Song කමාන්ඩ්ස් දෙකම වේගවත් Hybrid Handler එකට සම්බන්ධ කිරීම
 Sparky({ name: "play", fromMe: isPublic, category: "youtube", desc: "play a song" }, playSongHandler);
 Sparky({ name: "song", fromMe: isPublic, category: "youtube", desc: "play a song" }, playSongHandler);
