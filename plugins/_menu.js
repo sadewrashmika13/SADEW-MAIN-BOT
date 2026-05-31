@@ -13,8 +13,8 @@ const categoriesList = [
         icon: "📥",
         title: "DOWNLOAD MENU",
         subtitle: "YT, FB, IG වීඩියෝ",
-        categoryAliases: ["download", "downloader", "media"],
-        keywords: ["download", "yt", "youtube", "facebook", "fb", "instagram", "ig", "video", "audio", "song", "music", "tiktok"]
+        categoryAliases: ["download", "downloader", "media", "video", "audio", "song"],
+        keywords: ["download", "down", "yt", "youtube", "facebook", "fb", "instagram", "ig", "video", "audio", "song", "music", "tiktok", "mediafire"]
     },
     {
         num: 2,
@@ -22,8 +22,8 @@ const categoriesList = [
         icon: "🧠",
         title: "AI MENU",
         subtitle: "ChatGPT, Gemini, Bot",
-        categoryAliases: ["ai", "chatbot"],
-        keywords: ["ai", "chatgpt", "gpt", "gemini", "bard", "bot", "deepseek", "groq"]
+        categoryAliases: ["ai", "chatbot", "gpt", "openai"],
+        keywords: ["ai", "ask", "chatgpt", "gpt", "gemini", "bard", "bot", "deepseek", "groq", "llama"]
     },
     {
         num: 3,
@@ -32,7 +32,7 @@ const categoriesList = [
         title: "GROUP MENU",
         subtitle: "Group එක manage කරන්න",
         categoryAliases: ["group", "gc"],
-        keywords: ["group", "gc", "tag", "mention", "invite", "link", "welcome", "goodbye"]
+        keywords: ["group", "gc", "tag", "mention", "invite", "link", "welcome", "goodbye", "kick", "promote", "demote"]
     },
     {
         num: 4,
@@ -40,8 +40,8 @@ const categoriesList = [
         icon: "⚙️",
         title: "ADMIN MENU",
         subtitle: "Admin වැඩ කටයුතු",
-        categoryAliases: ["admin"],
-        keywords: ["admin", "promote", "demote", "kick", "remove", "add", "mute", "unmute", "warn"]
+        categoryAliases: ["admin", "moderation"],
+        keywords: ["admin", "promote", "demote", "kick", "remove", "add", "mute", "unmute", "warn", "ban"]
     },
     {
         num: 5,
@@ -50,7 +50,7 @@ const categoriesList = [
         title: "TOOLS MENU",
         subtitle: "Sticker, QR, Converter",
         categoryAliases: ["tools", "tool", "utility", "converter"],
-        keywords: ["tool", "qr", "scan", "short", "url", "convert", "sticker", "photo", "image", "edit"]
+        keywords: ["tool", "qr", "scan", "short", "url", "convert", "sticker", "photo", "image", "edit", "s"]
     },
     {
         num: 6,
@@ -58,8 +58,8 @@ const categoriesList = [
         icon: "👑",
         title: "OWNER MENU",
         subtitle: "Bot පාලනය සඳහා",
-        categoryAliases: ["owner", "sudo"],
-        keywords: ["owner", "restart", "shutdown", "update", "block", "unblock", "broadcast", "jid"]
+        categoryAliases: ["owner", "sudo", "system"],
+        keywords: ["owner", "restart", "shutdown", "update", "block", "unblock", "broadcast", "jid", "eval"]
     },
     {
         num: 7,
@@ -67,18 +67,20 @@ const categoriesList = [
         icon: "📁",
         title: "OTHER MENU",
         subtitle: "වෙනත් විධාන",
-        categoryAliases: ["other", "misc", "main"],
+        categoryAliases: ["other", "misc", "main", "general"],
         keywords: ["fun", "game", "meme", "quote", "weather", "news", "search", "info", "alive", "ping", "menu"]
     }
 ];
 
 function getTextFromMessage(msg) {
     const message = msg?.message || {};
+
     return (
         message.conversation ||
         message.extendedTextMessage?.text ||
         message.imageMessage?.caption ||
         message.videoMessage?.caption ||
+        message.documentMessage?.caption ||
         ""
     ).trim();
 }
@@ -99,21 +101,48 @@ function getQuotedMessageId(msg) {
 function getCommandName(cmd) {
     if (!cmd) return "";
 
-    if (typeof cmd.name === "string") {
-        return cmd.name;
-    }
+    const possibleNames = [
+        cmd.name,
+        cmd.pattern,
+        cmd.command,
+        cmd.cmd
+    ];
 
-    if (cmd.name instanceof RegExp) {
-        const match = cmd.name.source.match(/[a-z0-9]+/i);
-        return match ? match[0] : "";
-    }
+    for (const item of possibleNames) {
+        if (!item) continue;
 
-    if (cmd.pattern instanceof RegExp) {
-        const match = cmd.pattern.source.match(/[a-z0-9]+/i);
-        return match ? match[0] : "";
+        if (typeof item === "string") {
+            return item.replace(/^[./!#]/, "").trim();
+        }
+
+        if (item instanceof RegExp || item.source) {
+            const source = item.source || "";
+            const matches = source.match(/[a-zA-Z0-9]+/g);
+
+            if (matches && matches.length > 0) {
+                return matches[matches.length - 1];
+            }
+        }
     }
 
     return "";
+}
+
+function getArgsText(args, m) {
+    if (Array.isArray(args)) {
+        return args.join(" ").trim();
+    }
+
+    if (typeof args === "string") {
+        return args.trim();
+    }
+
+    if (args && typeof args === "object") {
+        return Object.values(args).join(" ").trim();
+    }
+
+    const text = m?.text || m?.body || "";
+    return text.replace(/^[./!#]menu/i, "").trim();
 }
 
 function commandBelongsToCategory(cmd, selectedCat) {
@@ -121,31 +150,41 @@ function commandBelongsToCategory(cmd, selectedCat) {
     const cmdCategory = String(cmd.category || "other").toLowerCase();
     const cmdDesc = String(cmd.desc || "").toLowerCase();
 
-    if (selectedCat.categoryAliases.includes(cmdCategory)) return true;
+    if (selectedCat.categoryAliases.some((cat) => cmdCategory.includes(cat))) {
+        return true;
+    }
 
     return selectedCat.keywords.some((kw) => {
-        return cmdName.includes(kw) || cmdDesc.includes(kw) || cmdCategory.includes(kw);
+        return cmdName === kw || cmdName.includes(kw) || cmdDesc.includes(kw);
     });
+}
+
+function getCommandsForCategory(selectedCat) {
+    const catCommands = [];
+
+    if (!Array.isArray(commands)) return catCommands;
+
+    commands.forEach((cmd) => {
+        if (!cmd || cmd.dontAddCommandList) return;
+
+        const cmdName = getCommandName(cmd);
+        if (!cmdName) return;
+
+        if (commandBelongsToCategory(cmd, selectedCat)) {
+            if (!catCommands.includes(cmdName)) {
+                catCommands.push(cmdName);
+            }
+        }
+    });
+
+    return catCommands.sort();
 }
 
 async function showCategoryMenu(client, m, categoryNumber, prefix, quotedMsg = null) {
     const selectedCat = categoriesList.find((cat) => cat.num === categoryNumber);
     if (!selectedCat) return false;
 
-    const catCommands = [];
-
-    if (Array.isArray(commands)) {
-        commands.forEach((cmd) => {
-            if (!cmd || cmd.dontAddCommandList) return;
-
-            const cmdName = getCommandName(cmd);
-            if (!cmdName) return;
-
-            if (commandBelongsToCategory(cmd, selectedCat)) {
-                if (!catCommands.includes(cmdName)) catCommands.push(cmdName);
-            }
-        });
-    }
+    const catCommands = getCommandsForCategory(selectedCat);
 
     let categoryMenu = `
 ╔════════════════════════════╗
@@ -157,7 +196,7 @@ async function showCategoryMenu(client, m, categoryNumber, prefix, quotedMsg = n
 `;
 
     if (catCommands.length > 0) {
-        catCommands.sort().forEach((cmd, index) => {
+        catCommands.forEach((cmd, index) => {
             const num = String(index + 1).padStart(2, "0");
             categoryMenu += `│ ${num}. ${prefix}${cmd}\n`;
         });
@@ -167,7 +206,7 @@ async function showCategoryMenu(client, m, categoryNumber, prefix, quotedMsg = n
 
     categoryMenu += `└────────────────────────────┘
 
-💡 *භාවිතය*
+💡 භාවිතය
 ➤ Command එක run කරන්න: ${prefix}command
 ➤ Main menu එකට යන්න: ${prefix}menu
 
@@ -190,7 +229,6 @@ function setupMenuReplyListener(client) {
 
             for (const msg of messages) {
                 if (!msg?.message) continue;
-                if (msg.key?.fromMe) continue;
 
                 const text = getTextFromMessage(msg);
                 if (!/^[1-7]$/.test(text)) continue;
@@ -213,7 +251,9 @@ function setupMenuReplyListener(client) {
                     jid: msg.key.remoteJid,
                     sender: msg.key.participant || msg.key.remoteJid,
                     prefix: menuData.prefix,
-                    reply: (replyText) => client.sendMessage(msg.key.remoteJid, { text: replyText }, { quoted: msg })
+                    reply: (replyText) => {
+                        return client.sendMessage(msg.key.remoteJid, { text: replyText }, { quoted: msg });
+                    }
                 };
 
                 await showCategoryMenu(client, fakeM, Number(text), menuData.prefix, msg);
@@ -234,13 +274,7 @@ Sparky({
         setupMenuReplyListener(client);
 
         const prefix = m.prefix || ".";
-        let userInput = "";
-
-        if (Array.isArray(args)) {
-            userInput = args.join(" ").trim();
-        } else if (typeof args === "string") {
-            userInput = args.trim();
-        }
+        const userInput = getArgsText(args, m);
 
         if (/^[1-7]$/.test(userInput)) {
             await showCategoryMenu(client, m, Number(userInput), prefix);
@@ -305,9 +339,13 @@ Sparky({
 │ මේ message එකට reply කරලා
 │ number එක විතරක් එවන්න.
 │
-│ උදා:
 │ Reply: 1  → DOWNLOAD MENU
 │ Reply: 2  → AI MENU
+│ Reply: 3  → GROUP MENU
+│ Reply: 4  → ADMIN MENU
+│ Reply: 5  → TOOLS MENU
+│ Reply: 6  → OWNER MENU
+│ Reply: 7  → OTHER MENU
 │
 │ නැත්නම්:
 │ ${prefix}menu 1
