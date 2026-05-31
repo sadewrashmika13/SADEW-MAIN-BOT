@@ -12,14 +12,12 @@ Sparky({
 }, async ({ client, m }) => {
     let tempFile = null;
     try {
-        // 🔍 රිප්ලයි එකක් තියෙනවද බලනවා
         if (!m.quoted) {
             return await m.reply("_❌ කරුණාකර ෆොටෝ එකකට, වීඩියෝ එකකට හෝ ඕඩියෝ එකකට Reply කරලා .tourl ගහන්න!_");
         }
 
-        await m.react("🔗"); // 🔗 ඉමෝජි එකෙන් වැඩේ පටන් ගත්තා කියලා පෙන්වනවා
+        await m.react("🔗");
 
-        // 📥 මීඩියා එක ඩවුන්ලෝඩ් කරගන්නවා
         const media = await m.quoted.download().catch(() => null);
         
         if (!media) {
@@ -27,29 +25,31 @@ Sparky({
             return await m.reply("_❌ මීඩියා එක ඩවුන්ලෝඩ් කරගැනීමේ ගැටලුවක් ඇතිවුණා!_");
         }
 
-        // 📂 ෆයිල් එකේ වර්ගය (Extension) අල්ලගෙන ටෙම්පරි ෆයිල් එකක් හදනවා
         const mime = m.quoted.mimetype || m.quoted.msg?.mimetype || "image/jpeg";
         const ext = mime.split("/")[1] || "jpeg";
-        tempFile = path.join(__dirname, `temp_tourl_${Date.now()}.${ext}`);
+        const filename = `file_${Date.now()}.${ext}`;
+        tempFile = path.join(__dirname, filename);
         
         fs.writeFileSync(tempFile, media);
 
-        // 🌐 Catbox API එකට Upload කරන්න FormData එක සකසනවා
+        // 🌐 FormData එකට ෆයිල් එක දාද්දීම නම සහ වර්ගය (Filename & ContentType) අනිවාර්යයෙන්ම දෙනවා
         const bodyForm = new FormData();
         bodyForm.append("reqtype", "fileupload");
-        bodyForm.append("fileToUpload", fs.createReadStream(tempFile));
+        bodyForm.append("fileToUpload", fs.createReadStream(tempFile), {
+            filename: filename,
+            contentType: mime
+        });
 
-        // 🚀 API එකට පෝස්ට් රික්වෙස්ට් එක දානවා
+        // 🚀 Cloudflare බ්ලොක් නොවෙන්න Real Browser User-Agent එකක් එක්ක පෝස්ට් කරනවා
         const response = await axios.post("https://catbox.moe/user/api.php", bodyForm, {
             headers: {
                 ...bodyForm.getHeaders(),
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
         });
 
-        // 🗑️ අප්ලෝඩ් වුණු ගමන් ටෙම්පරි ෆයිල් එක සර්වර් එකෙන් ඩිලීට් කරනවා
         if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
 
-        // 🔗 ලින්ක් එක හරියට ආවද බලලා රිප්ලයි කරනවා
         if (response.data && response.data.includes("http")) {
             await m.react("✅");
             let successMsg = `*🔗 YOUR URL IS READY!* \n\n`;
@@ -64,14 +64,13 @@ Sparky({
         console.error("Tourl Error:", error);
         await m.react("❌");
         
-        // 🗑️ එරර් එකක් ආවත් ටෙම්පරි ෆයිල් එක ක්ලීන් කරනවා Space ඉතුරු වෙන්න
         if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
         
-        // 📝 ඔයා ඉල්ලපු විදිහටම එරර් එක ලස්සනට වට්ස්ඇප් එකට එනවා මචං
+        // 📝 තවමත් අවුලක් ආවොත් එරර් එක වට්ස්ඇප් එකටම එනවා
         let errorMsg = `_❌ Tourl System Error:_\n\`\`\`${error.message || error}\`\`\`\n\n`;
         errorMsg += `*📊 Debug Info:*\n`;
-        errorMsg += `• Error Code: \`${error.code || "UNKNOWN"}\`\n\n`;
-        errorMsg += `*💡 පියවර:* සර්වර් එකේ ඉන්ටර්නෙට් බ්ලොක් එකක් හෝ \`axios\` / \`form-data\` පැකේජ් වල ගැටලුවක්දැයි ෂුවර් කරගන්න මචං.`;
+        errorMsg += `• Error Code: \`${error.code || "UNKNOWN"}\`\n`;
+        errorMsg += `• Response Data: \`${error.response?.data || "No Data"}\`\n`;
         
         return await m.reply(errorMsg);
     }
