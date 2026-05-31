@@ -2,18 +2,43 @@
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
-// Helper: follow redirects and get final video URL
-async function getFinalVideoUrl(url) {
+// Helper function to get query from args
+function getQuery(args) {
+    if (!args) return "";
+    if (Array.isArray(args)) return args.join(" ").trim();
+    if (typeof args === "string") return args.trim();
+    if (typeof args === "object") return Object.values(args).join(" ").trim();
+    return "";
+}
+
+// Helper to extract video URL from API responses
+function extractVideoUrlFromAPI(data, apiName) {
+    if (apiName === 'tikwm') return data?.data?.play || null;
+    if (apiName === 'tikmate') return data?.video_url || data?.download_url || null;
+    if (apiName === 'tikvoid') return data?.data?.downloadUrl || data?.downloadUrl || null;
+    if (apiName === 'omkar') return data?.media?.video_url || data?.media?.hd_video_url || null;
+    return null;
+}
+
+// Helper to extract metadata (title, author) for caption
+function extractMetadataForCaption(data, apiName, videoUrl) {
+    let song = "Unknown", author = "Unknown";
     try {
-        const response = await axios.head(url, {
-            maxRedirects: 5,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 10000
-        });
-        return response.request.res.responseUrl || url;
-    } catch (e) {
-        return url;
-    }
+        if (apiName === 'tikwm' && data?.data) {
+            song = data.data.music_info?.title || data.data.title || "Unknown";
+            author = data.data.author?.unique_id || data.data.author?.nickname || "Unknown";
+        } else if (apiName === 'tikmate' && data) {
+            song = data.title || data.description || "Unknown";
+            author = data.author || data.username || "Unknown";
+        } else if (apiName === 'tikvoid' && data?.data) {
+            song = data.data.title || "Unknown";
+            author = data.data.author || "Unknown";
+        } else if (apiName === 'omkar' && data) {
+            song = data.caption || data.description || "Unknown";
+            author = data.author?.unique_id || data.author?.handle || "Unknown";
+        }
+    } catch (e) { console.error("Metadata extraction error:", e); }
+    return { song, author };
 }
 
 Sparky({
@@ -22,7 +47,7 @@ Sparky({
     category: "download",
     desc: "Download TikTok Photo Slideshow as an Actual Video File"
 }, async ({ client, m, args }) => {
-    let url = (args && Array.isArray(args)) ? args.join(" ").trim() : (typeof args === "string" ? args.trim() : "");
+    const url = getQuery(args);
     if (!url) {
         return m.reply("_Please provide a TikTok photo slideshow link!\nExample: .timg https://vm.tiktok.com/xxxxxx_");
     }
@@ -30,87 +55,53 @@ Sparky({
     await m.react("⏳");
     await client.sendPresenceUpdate('composing', m.jid);
 
-    try {
-        // ---- Primary API: tikwm.com ----
-        const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
-        console.log(`[TIKTOK] Fetching from tikwm.com: ${apiUrl}`);
-        const response = await axios.get(apiUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 15000
-        });
+    // --- API Configuration Array (Order is priority: best to worst) ---
+    const APIs = [
+        { name: 'TikWM', endpoint: `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, dataExtractor: (res) => extractVideoUrlFromAPI(res.data, 'tikwm'), metaExtractor: (res) => extractMetadataForCaption(res.data, 'tikwm', url) },
+        { name: 'TikMate', endpoint: `https://api.tikmate.app/api/lookup?url=${encodeURIComponent(url)}`, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0' }, dataExtractor: (res) => extractVideoUrlFromAPI(res.data, 'tikmate'), metaExtractor: (res) => extractMetadataForCaption(res.data, 'tikmate', url) },
+        { name: 'TikVoidBackend', endpoint: `https://tiktok-void-backend.onrender.com/api/download`, method: 'POST', headers: { 'Content-Type': 'application/json' }, dataExtractor: (res) => extractVideoUrlFromAPI(res.data, 'tikvoid'), metaExtractor: (res) => extractMetadataForCaption(res.data, 'tikvoid', url), body: { url: url } },
+        { name: 'OmkarCloud', endpoint: `https://tiktok-scraper.omkar.cloud/tiktok/videos/details?video_url=${encodeURIComponent(url)}`, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0', 'API-Key': process.env.OMKAR_API_KEY || '' }, dataExtractor: (res) => extractVideoUrlFromAPI(res.data, 'omkar'), metaExtractor: (res) => extractMetadataForCaption(res.data, 'omkar', url) }
+    ];
 
-        const data = response.data;
-        if (!data || data.code !== 0 || !data.data) {
-            throw new Error("Invalid response from tikwm.com");
-        }
-
-        let videoUrl = data.data.play;
-        if (!videoUrl) {
-            throw new Error("No video URL found (maybe not a slideshow?)");
-        }
-
-        // Follow redirects to get real video URL
-        videoUrl = await getFinalVideoUrl(videoUrl);
-        console.log(`[TIKTOK] Final video URL: ${videoUrl}`);
-
-        // Download the video as buffer
-        const videoRes = await axios.get(videoUrl, {
-            responseType: 'arraybuffer',
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 30000,
-            maxRedirects: 5
-        });
-
-        const buffer = Buffer.from(videoRes.data);
-        if (buffer.length < 5000) {
-            throw new Error("Downloaded file is too small (empty video)");
-        }
-
-        const caption = `🎬 *TikTok Photo Slideshow Converted to Video!*\n\n` +
-                        `🎵 *Song:* ${data.data.music_info?.title || "Unknown"}\n` +
-                        `👤 *Creator:* ${data.data.author?.nickname || "Unknown"}\n` +
-                        `📸 *Photos converted to video*\n` +
-                        `💫 *Watermark removed*`;
-
-        await client.sendMessage(m.jid, {
-            video: buffer,
-            caption: caption,
-            mimetype: 'video/mp4'
-        }, { quoted: m });
-
-        await m.react("✅");
-
-    } catch (error) {
-        console.error("[TIKTOK ERROR] Primary API failed:", error.message);
-        await m.react("❌");
-        
-        // ---- Fallback API: tikmate.app ----
+    for (const api of APIs) {
         try {
-            console.log("[TIKTOK] Trying fallback API: tikmate.app");
-            const fallbackUrl = `https://api.tikmate.app/api/lookup?url=${encodeURIComponent(url)}`;
-            const fallbackRes = await axios.get(fallbackUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
+            console.log(`[TIKTOK] Trying API: ${api.name}`);
+            const response = await axios({
+                method: api.method,
+                url: api.endpoint,
+                data: api.body || undefined,
+                headers: api.headers,
                 timeout: 15000
             });
-            const videoUrl = fallbackRes.data?.video_url;
-            if (!videoUrl) throw new Error("No video URL from fallback");
 
+            const videoUrl = api.dataExtractor(response);
+            if (!videoUrl) throw new Error(`No video URL found in ${api.name} response.`);
+
+            // Download video as buffer
             const videoRes = await axios.get(videoUrl, {
                 responseType: 'arraybuffer',
                 headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 30000
+                timeout: 45000,
+                maxRedirects: 5
             });
             const buffer = Buffer.from(videoRes.data);
-            if (buffer.length < 5000) throw new Error("Empty video from fallback");
+            if (buffer.length < 5000) throw new Error(`Downloaded file is too small (empty video) from ${api.name}`);
 
-            const caption = `🎬 *TikTok Slideshow (fallback API)*\n💫 *Watermark removed*`;
+            // Extract metadata for caption
+            const { song, author } = api.metaExtractor(response);
+            const caption = `🎬 *TikTok Photo Slideshow Converted to Video!*\n\n🎵 *Song:* ${song}\n👤 *Creator:* ${author}\n📸 *Photos converted to video*\n💫 *Watermark removed*\n\n✨ *Powered by ${api.name} API*`;
+
             await client.sendMessage(m.jid, { video: buffer, caption: caption, mimetype: 'video/mp4' }, { quoted: m });
             await m.react("✅");
-            return;
-        } catch (fallbackErr) {
-            console.error("[TIKTOK] Fallback also failed:", fallbackErr.message);
-        }
+            return; // Exit loop on success
 
-        m.reply(`❌ *Failed to download the slideshow.*\n\n📝 Error: ${error.message.substring(0, 100)}\n\n💡 Try again later or use a different link.`);
+        } catch (error) {
+            console.error(`[TIKTOK] API ${api.name} failed:`, error.message);
+            // Continue to next API
+        }
     }
+
+    // If all APIs fail
+    await m.react("❌");
+    m.reply("❌ *මචං, හැම TikTok API එකක්ම fail වුණා!* \n\n💡 *Solutions:*\n1. Link එක නිවැරදිද කියලා බලන්න.\n2. TikTok video එක public එකක්ද කියලා බලන්න.\n3. TikTok website එකෙන් video එකේ link එක copy කරලා බලන්න.\n4. ටික වෙලාවකින් නැවත try කරන්න.");
 });
