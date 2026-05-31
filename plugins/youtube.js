@@ -8,14 +8,52 @@ const { getString, isUrl } = require('./pluginsCore');
 const axios = require('axios'); // ⚡ සුපිරි වේගවත් RAM Streaming සහ HTTP Requests සඳහා
 const lang = getString('download');
 
-// 🌐 සර්වර් බ්ලොක් සහ Speed Limits මුළුමනින්ම මඟහැරීමට පාවිච්චි කරන Headers
+// 🔑 Asitha Premium API සැකසුම්
+const API_KEY = "f8deeb99a26a9666731c6b5dede05914c64ab64ca9b4cfeee8859408a3f9ce30"; 
+const API_BASE_URL = "https://back.asitha.top/api/ytapi";
+
 const SAFE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "*/*"
 };
 
+// 🛠️ Premium API එකෙන් ලින්ක් එක ගන්නා පොදු Helper Function එක
+async function fetchPremiumLink(videoUrl, isVideo = false) {
+    try {
+        // ඔයා දුන්නු Recommended Authorization Header ක්‍රමය
+        const response = await axios.get(API_BASE_URL, {
+            params: {
+                url: videoUrl,
+                fo: isVideo ? "1" : "2", // 1 = Video, 2 = Audio (API Standard)
+                qu: isVideo ? "360" : "128"
+            },
+            headers: {
+                'Authorization': `Bearer ${API_KEY}`, 
+            },
+            timeout: 12000
+        });
+
+        const d = response.data?.result || response.data?.data || response.data;
+        return d?.download || d?.link || d?.url || d?.audio || d?.video;
+    } catch (error) {
+        console.error("Premium API Error, trying fallback parameters...", error.message);
+        try {
+            // Alternative parameter structure just in case
+            const altResponse = await axios.get(API_BASE_URL, {
+                params: { url: videoUrl, fo: "1", qu: "144" },
+                headers: { 'Authorization': `Bearer ${API_KEY}` },
+                timeout: 10000
+            });
+            const d2 = altResponse.data?.result || altResponse.data;
+            return d2?.download || d2?.link || d2?.url;
+        } catch (e) {
+            return null;
+        }
+    }
+}
+
 // ==========================================
-// 🔎 1. YTS COMMAND (NATIVE NOP-DELAY SEARCH)
+// 🔎 1. YTS COMMAND (NATIVE NO-DELAY SEARCH)
 // ==========================================
 Sparky({
   name: "yts",
@@ -45,7 +83,7 @@ Sparky({
 });
 
 // ==========================================
-// 🎬 2. YTV COMMAND (ULTRA BACKUP VIDEO ENGINE)
+// 🎬 2. YTV COMMAND (PREMIUM VIDEO DOWNLOADER)
 // ==========================================
 Sparky({
   name: "ytv",
@@ -60,20 +98,16 @@ Sparky({
       if (!await isUrl(query)) return await m.reply(lang.INVALID_LINK);
       
       await m.react('⬇️');
-      let videoUrl = null;
+      
+      // 🥇 1st Choice: Asitha Premium API (Ultra Fast)
+      let videoUrl = await fetchPremiumLink(query, true);
 
-      // 🚀 Server 1: BK9 High-Speed MP4 Engine
-      try {
-          const res = await axios.get("https://bk9.fun/download/ytmp4?url=" + encodeURIComponent(query), { timeout: 9000 });
-          videoUrl = res.data?.result?.download || res.data?.BK9?.download || res.data?.result?.url;
-      } catch (e) { console.log("Video Server 1 Down..."); }
-
-      // 🚀 Server 2: BTCH Global Bypass Engine
+      // 🥈 2nd Choice: Public Backup Engine (If premium fails)
       if (!videoUrl) {
           try {
-              const res = await axios.get("https://api.btch.bx2.xyz/api/download/ytmp4?url=" + encodeURIComponent(query), { timeout: 9000 });
-              videoUrl = res.data?.result?.video || res.data?.result?.url || res.data?.result;
-          } catch (e) { console.log("Video Server 2 Down..."); }
+              const res = await axios.get("https://bk9.fun/download/ytmp4?url=" + encodeURIComponent(query), { timeout: 8000 });
+              videoUrl = res.data?.result?.download || res.data?.result?.url;
+          } catch (e) {}
       }
 
       if (!videoUrl) {
@@ -81,8 +115,8 @@ Sparky({
           return m.reply("_❌ වීඩියෝ සර්වර්ස් සියල්ලම මේ වෙලාවේ කාර්යබහුලයි. පසුව උත්සාහ කරන්න!_");
       }
 
-      // Stream Direct To Buffer
-      const stream = await axios.get(videoUrl, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 50000 });
+      // Stream Buffer Directly to WhatsApp (No lagging)
+      const stream = await axios.get(videoUrl, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 60000 });
       const buffer = Buffer.from(stream.data);
 
       await m.react('✅');
@@ -94,7 +128,7 @@ Sparky({
 });
 
 // ==========================================
-// 🎵 3. YTA COMMAND (TURBO AUDIO ENGINE)
+// 🎵 3. YTA COMMAND (PREMIUM AUDIO DOWNLOADER)
 // ==========================================
 Sparky({
   name: "yta",
@@ -109,27 +143,15 @@ Sparky({
       if (!await isUrl(query)) return await m.reply(lang.INVALID_LINK);
       
       await m.react('⬇️');
-      let mp3Url = null;
       
-      // 🚀 Server 1: BK9 Audio Engine
-      try {
-          const res = await axios.get("https://bk9.fun/download/ytmp3?url=" + encodeURIComponent(query), { timeout: 9000 });
-          mp3Url = res.data?.result?.download || res.data?.BK9?.download || res.data?.result?.url;
-      } catch (e) {}
-
-      // 🚀 Server 2: BTCH Audio Engine
+      // 🥇 1st Choice: Asitha Premium API
+      let mp3Url = await fetchPremiumLink(query, false);
+      
+      // 🥈 2nd Choice: Public Backup Engine
       if (!mp3Url) {
           try {
-              const res = await axios.get("https://api.btch.bx2.xyz/api/download/ytmp3?url=" + encodeURIComponent(query), { timeout: 9000 });
-              mp3Url = res.data?.result?.audio || res.data?.result?.url;
-          } catch (e) {}
-      }
-
-      // 🚀 Server 3: Vreden Premium Multi-DL
-      if (!mp3Url) {
-          try {
-              const res = await axios.get("https://api.vreden.my.id/api/ytmp3?url=" + encodeURIComponent(query), { timeout: 9000 });
-              mp3Url = res.data?.result?.download?.url || res.data?.result?.url;
+              const res = await axios.get("https://bk9.fun/download/ytmp3?url=" + encodeURIComponent(query), { timeout: 8000 });
+              mp3Url = res.data?.result?.download || res.data?.result?.url;
           } catch (e) {}
       }
 
@@ -138,7 +160,7 @@ Sparky({
           return m.reply("_❌ ඕඩියෝ සර්වර්ස් සියල්ලම කාර්යබහුලයි. පසුව උත්සාහ කරන්න!_");
       }
 
-      const stream = await axios.get(mp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 35000 });
+      const stream = await axios.get(mp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 40000 });
       const buffer = Buffer.from(stream.data);
 
       await m.react('✅');
@@ -150,7 +172,7 @@ Sparky({
 });
 
 // ==========================================
-// 🚀 4 & 5. PLAY & SONG HYBRID TURBO ENGINE
+// 🚀 4 & 5. PLAY & SONG HYBRID PREMIUM ENGINE
 // ==========================================
 const playSongHandler = async ({ m, client, args }) => {
     try {
@@ -171,27 +193,14 @@ const playSongHandler = async ({ m, client, args }) => {
       await m.reply(`_*📥 Downloading:* ${play.title}_`);
       await m.react('⬇️');
 
-      let finalMp3Url = null;
+      // 🥇 1st Choice: Asitha Premium API Fetch
+      let finalMp3Url = await fetchPremiumLink(play.url, false);
 
-      // 🚀 Try Server 1 (BK9 Engine)
-      try {
-          const res = await axios.get("https://bk9.fun/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 9000 });
-          finalMp3Url = res.data?.result?.download || res.data?.BK9?.download || res.data?.result?.url;
-      } catch (e) {}
-
-      // 🚀 Try Server 2 (BTCH Engine)
+      // 🥈 2nd Choice: Backup Engine Fetch
       if (!finalMp3Url) {
           try {
-              const res = await axios.get("https://api.btch.bx2.xyz/api/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 9000 });
-              finalMp3Url = res.data?.result?.audio || res.data?.result?.url;
-          } catch (e) {}
-      }
-
-      // 🚀 Try Server 3 (Vreden Engine)
-      if (!finalMp3Url) {
-          try {
-              const res = await axios.get("https://api.vreden.my.id/api/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 9000 });
-              finalMp3Url = res.data?.result?.download?.url || res.data?.result?.url;
+              const res = await axios.get("https://bk9.fun/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 8000 });
+              finalMp3Url = res.data?.result?.download || res.data?.result?.url;
           } catch (e) {}
       }
 
@@ -201,7 +210,7 @@ const playSongHandler = async ({ m, client, args }) => {
       }
 
       // Fast Stream to RAM Buffer
-      const audioStream = await axios.get(finalMp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 35000 });
+      const audioStream = await axios.get(finalMp3Url, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 40000 });
       const audioBuffer = Buffer.from(audioStream.data);
 
       await m.react('✅');
