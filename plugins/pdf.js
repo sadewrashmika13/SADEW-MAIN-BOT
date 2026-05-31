@@ -3,93 +3,117 @@ const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
 
+// 🧠 ෆොටෝ එකතු කරලා තියාගන්නා සර්වර් සෙෂන් එක
+global.pdfSessions = global.pdfSessions || {};
+
 Sparky({
     name: "pdf",
     category: "misc",
     fromMe: isPublic,
-    desc: "Converts a replied image into a high-quality PDF document"
-}, async ({ client, m }) => {
-    let tempImg = null;
-    let tempPdf = null;
-    
-    try {
-        // 🔍 රිප්ලයි කරපු මැසේජ් එකක් තියෙනවද සහ ඒක ෆොටෝ එකක්ද කියලා බලනවා
-        const isImage = m.quoted && (m.quoted.mimetype?.startsWith("image/") || m.quoted.msg?.mimetype?.startsWith("image/"));
-        
-        if (!isImage) {
-            return await m.reply("_❌ කරුණාකර PDF එකක් බවට හරවන්න ඕනේ ෆොටෝ එකකට Reply කරලා .pdf ගහන්න!_");
-        }
+    desc: "Combine multiple images or a single image into a PDF"
+}, async ({ client, m, text }) => {
+    const userId = m.sender;
+    const cmd = text ? text.trim().toLowerCase() : "";
 
-        await m.react("📄"); // 📄 ඉමෝජි එකෙන් වැඩේ පටන් ගත්තා කියලා පෙන්වනවා
-
-        // 📥 ෆොටෝ එක සර්වර් එකට ඩවුන්ලෝඩ් කරගන්නවා
-        const media = await m.quoted.download().catch(() => null);
-        
-        if (!media) {
+    // 📄 1. PDF එක නිපදවා බාගත කිරීම (.pdf export)
+    if (cmd === "export" || cmd === "done" || cmd === "download") {
+        if (!global.pdfSessions[userId] || global.pdfSessions[userId].length === 0) {
             await m.react("❌");
-            return await m.reply("_❌ ෆොටෝ එක ඩවුන්ලෝඩ් කරගැනීමේ ගැටලුවක් ඇතිවුණා!_");
+            return await m.reply("_❌ ඔයා තවම කිසිම ෆොටෝ එකක් එකතු කරලා නැහැ මචං!_");
         }
 
-        // 📂 ටෙම්පරි ෆයිල් පාත් හදාගන්නවා
-        tempImg = path.join(__dirname, `temp_pdf_img_${Date.now()}.jpg`);
-        tempPdf = path.join(__dirname, `temp_pdf_out_${Date.now()}.pdf`);
-        
-        fs.writeFileSync(tempImg, media);
+        await m.react("⏳");
+        let tempPdf = path.join(__dirname, `temp_pdf_out_${Date.now()}.pdf`);
+        let tempImages = [];
 
-        // 🛠️ PDF එක නිර්මාණය කිරීම ආරම්භ කරනවා (Standard A4 Page, No Margins)
-        const doc = new PDFDocument({ size: "A4", margin: 0 });
-        const writeStream = fs.createWriteStream(tempPdf);
-        
-        doc.pipe(writeStream);
+        try {
+            const doc = new PDFDocument({ size: "A4", margin: 0 });
+            const writeStream = fs.createWriteStream(tempPdf);
+            doc.pipe(writeStream);
 
-        // 🎨 ෆොටෝ එක A4 පිටුවට හරියටම මැදිවෙලා ෆිට් වෙන විදිහට (Fit to Page) සකසනවා
-        doc.image(tempImg, 0, 0, {
-            fit: [595.28, 841.89],
-            align: "center",
-            valign: "center"
-        });
-        
-        doc.end();
+            const sessionImages = global.pdfSessions[userId];
 
-        // ⏳ PDF එක සම්පූර්ණයෙන්ම සර්වර් එකේ ලියලා ඉවර වෙනකන් පොඩ්ඩක් ඉන්නවා
-        writeStream.on("finish", async () => {
-            try {
-                const pdfBuffer = fs.readFileSync(tempPdf);
+            for (let i = 0; i < sessionImages.length; i++) {
+                let imgBuffer = sessionImages[i];
+                let tempImgPath = path.join(__dirname, `temp_pdf_page_${Date.now()}_${i}.jpg`);
+                fs.writeFileSync(tempImgPath, imgBuffer);
+                tempImages.push(tempImgPath);
 
-                // 🗑️ වැඩේ ඉවර වුණු ගමන් ටෙම්පරි ෆයිල්ස් ඩිලීට් කරනවා Storage ඉතුරු වෙන්න
-                if (fs.existsSync(tempImg)) fs.unlinkSync(tempImg);
-                if (fs.existsSync(tempPdf)) fs.unlinkSync(tempPdf);
+                if (i > 0) doc.addPage({ size: "A4", margin: 0 });
 
-                await m.react("✅");
-
-                // 📤 හදපු PDF එක වට්ස්ඇප් එකට Document එකක් විදිහට යවනවා
-                return await client.sendMessage(m.jid, {
-                    document: pdfBuffer,
-                    mimetype: "application/pdf",
-                    fileName: `SADEW-MD_${Date.now()}.pdf`
-                }, { quoted: m });
-
-            } catch (innerError) {
-                throw innerError;
+                doc.image(tempImgPath, 0, 0, {
+                    fit: [595.28, 841.89],
+                    align: "center",
+                    valign: "center"
+                });
             }
-        });
 
-    } catch (error) {
-        console.error("PDF Tools Error:", error);
-        await m.react("❌");
-        
-        // 🗑️ එරර් එකක් ආවත් ටෙම්පරි ෆයිල්ස් ක්ලීන් කරනවා
-        if (tempImg && fs.existsSync(tempImg)) fs.unlinkSync(tempImg);
-        if (tempPdf && fs.existsSync(tempPdf)) fs.unlinkSync(tempPdf);
-        
-        // 📝 ඔයා ඉල්ලපු විදිහටම සම්පූර්ණ සිස්ටම් එරර් එක ලස්සනට වට්ස්ඇප් එකට එනවා මචං
-        let errorMsg = `_❌ PDF System Error:_\n\`\`\`${error.message || error}\`\`\`\n\n`;
-        errorMsg += `*📊 Debug Info:*\n`;
-        errorMsg += `• Error Code: \`${error.code || "UNKNOWN"}\`\n\n`;
-        errorMsg += `*💡 ෂුවර් එකටම මේවා කලාද බලන්න:* \n`;
-        errorMsg += `1. \`package.json\` එකට \`"pdfkit"\` පැකේජ් එක ඇතුලත් කරලා GitHub එකට Push කරාද?\n`;
-        errorMsg += `2. සර්වර් එක අලුතෙන් Build වෙලා ඉවර වෙනකන් විනාඩියක් විතර ඉඳලා ආයේ ට්‍රැයි කරන්න මචං.`;
-        
-        return await m.reply(errorMsg);
+            doc.end();
+
+            writeStream.on("finish", async () => {
+                try {
+                    const pdfBuffer = fs.readFileSync(tempPdf);
+                    
+                    if (fs.existsSync(tempPdf)) fs.unlinkSync(tempPdf);
+                    tempImages.forEach(img => { if (fs.existsSync(img)) fs.unlinkSync(img); });
+                    
+                    delete global.pdfSessions[userId]; // සෙෂන් එක ක්ලීන් කරනවා
+
+                    await m.react("✅");
+                    return await client.sendMessage(m.jid, {
+                        document: pdfBuffer,
+                        mimetype: "application/pdf",
+                        fileName: `SADEW-MD_${Date.now()}.pdf`
+                    }, { quoted: m });
+                } catch (err) { console.error(err); }
+            });
+
+        } catch (error) {
+            console.error(error);
+            await m.react("❌");
+            return await m.reply(`_❌ PDF Export Error: ${error.message}_`);
+        }
+        return;
     }
+
+    // 🧹 2. ලිස්ට් එක Clear කිරීම (.pdf clear)
+    if (cmd === "clear" || cmd === "reset") {
+        if (global.pdfSessions[userId]) {
+            delete global.pdfSessions[userId];
+            await m.react("🧹");
+            return await m.reply("_🧹 එකතු කරපු ෆොටෝ ලිස්ට් එක සාර්ථකව අයින් කරා මචං!_");
+        }
+        return await m.reply("_❌ ඔයාගේ ඇක්ටිව් ලිස්ට් එකක් නැහැ._");
+    }
+
+    // 📥 3. ෆොටෝ එකින් එක එකතු කරගැනීම (.pdf)
+    if (!m.quoted) {
+        return await m.reply("_💡 ෆොටෝ එකකට රිප්ලයි කරලා .pdf ගහන්න. ෆොටෝ ඔක්කොම එකතු කරලා ඉවර වුණාම .pdf export ගහන්න මචං._");
+    }
+
+    // 🔥 BULLETPROOF IMAGE DETECTION (හැම තැනම පීරලා ෆොටෝ එක අල්ලනවා)
+    const mime = m.quoted.mimetype || m.quoted.msg?.mimetype || "";
+    const type = m.quoted.type || "";
+    const isImage = mime.startsWith("image/") || 
+                    type.includes("image") || 
+                    m.quoted.msg?.imageMessage || 
+                    m.quoted.message?.imageMessage;
+
+    if (!isImage) {
+        return await m.reply("_❌ කරුණාකර නිවැරදි ෆොටෝ එකකට Reply කරලා .pdf ගහන්න මචං!_");
+    }
+
+    await m.react("📥");
+    const media = await m.quoted.download().catch(() => null);
+    
+    if (!media) {
+        await m.react("❌");
+        return await m.reply("_❌ ෆොටෝ එක ඩවුන්ලෝඩ් කරගැනීමේ ගැටලුවක් ඇතිවුණා!_");
+    }
+
+    if (!global.pdfSessions[userId]) global.pdfSessions[userId] = [];
+    global.pdfSessions[userId].push(media);
+    await m.react("➕");
+
+    return await m.reply(`*✅ ෆොටෝ එක සාර්ථකව එකතු කරගත්තා! (මුළු ගණන: ${global.pdfSessions[userId].length})*\n\n💡 _ඊළඟ ෆොටෝ එකටත් රිප්ලයි කරලා \`.pdf\` ගහන්න. ඔක්කොම එකතු කරලා ඉවර වුණාම_ \`*.pdf export*\` _කියලා මැසේජ් එකක් දාන්න මචං._`);
 });
