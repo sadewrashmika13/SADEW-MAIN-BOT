@@ -5,17 +5,17 @@ const {
   yts
 } = require("../lib");
 const { getString, isUrl } = require('./pluginsCore');
-const axios = require('axios');
+const axios = require('axios'); // ⚡ සුපිරි වේගවත් RAM Streaming සහ HTTP Requests සඳහා
 const lang = getString('download');
 
-// 🌐 ඩවුන්ලෝඩ් ස්පීඩ් එක උපරිම කිරීමට සහ සර්වර් බ්ලොක් මඟහැරීමට Headers
+// 🌐 සර්වර් බ්ලොක් සහ Speed Limits මුළුමනින්ම මඟහැරීමට පාවිච්චි කරන Headers
 const SAFE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "*/*"
 };
 
 // ==========================================
-// 🔎 1. YTS COMMAND (NATIVE ULTRA-FAST SEARCH)
+// 🔎 1. YTS COMMAND (NATIVE NOP-DELAY SEARCH)
 // ==========================================
 Sparky({
   name: "yts",
@@ -23,20 +23,20 @@ Sparky({
   category: "youtube",
   desc: "search in youtube"
 }, async ({ m, client, args }) => {
-  if (!args) return await m.reply(lang.NEED_Q);
+  const query = Array.isArray(args) ? args.join(" ") : args;
+  if (!query) return await m.reply(lang.NEED_Q);
   
   await m.react('🔎');
   try {
-    if (await isUrl(args)) {
-      const yt = await YtInfo(args);
-      return await client.sendMessage(m.jid, { image: { url: yt.thumbnail }, caption: "*title :* " + yt.title + "\n*author :* " + yt.author + "\n*url :* " + args + "\n*video id :* " + yt.videoId });
+    if (await isUrl(query)) {
+      const yt = await YtInfo(query);
+      return await client.sendMessage(m.jid, { image: { url: yt.thumbnail }, caption: "*title :* " + yt.title + "\n*author :* " + yt.author + "\n*url :* " + query + "\n*video id :* " + yt.videoId });
     } else {
-      // බාහිර API එකක් වෙනුවට බොට්ගේම Local Engine එකෙන් සර්ච් කරන නිසා කිසිම ලැග් එකක් නැත
-      const videos = await yts(args);
+      const videos = await yts(query);
       if (!videos || videos.length === 0) return m.reply("_❌ සර්ච් රිසල්ට් කිසිවක් හමුවුණේ නැහැ._");
       
       const result = videos.slice(0, 8).map(video => `*🏷️ Title :* _*${video.title}*_\n*📁 Duration :* _${video.duration}_\n*🔗 Link :* _${video.url}_`);
-      return await m.reply(`\n\n_*Result Of ${args} 🔍*_\n\n` + result.join('\n\n'));
+      return await m.reply(`\n\n_*Result Of ${query} 🔍*_\n\n` + result.join('\n\n'));
     }
   } catch (error) {
     await m.react('❌');
@@ -45,7 +45,7 @@ Sparky({
 });
 
 // ==========================================
-// 🎬 2. YTV COMMAND (TURBO SPEED VIDEO ENGINE)
+// 🎬 2. YTV COMMAND (ULTRA BACKUP VIDEO ENGINE)
 // ==========================================
 Sparky({
   name: "ytv",
@@ -55,33 +55,34 @@ Sparky({
 }, async ({ m, client, args }) => {
     try {
       args = args || m.quoted?.text;
-      if (!args) return await m.reply(lang.NEED_URL);
-      if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK);
+      const query = Array.isArray(args) ? args.join(" ") : args;
+      if (!query) return await m.reply(lang.NEED_URL);
+      if (!await isUrl(query)) return await m.reply(lang.INVALID_LINK);
       
       await m.react('⬇️');
       let videoUrl = null;
 
-      // New Active Server 1: Maher Zubair Core Engine
+      // 🚀 Server 1: BK9 High-Speed MP4 Engine
       try {
-          const res = await axios.get("https://api.maher-zubair.tech" + "/download/ytmp4?url=" + encodeURIComponent(args), { timeout: 8000 });
-          videoUrl = res.data?.result?.link || res.data?.result?.url;
-      } catch (e) { console.log("Video Server 1 down, trying Server 2..."); }
+          const res = await axios.get("https://bk9.fun/download/ytmp4?url=" + encodeURIComponent(query), { timeout: 9000 });
+          videoUrl = res.data?.result?.download || res.data?.BK9?.download || res.data?.result?.url;
+      } catch (e) { console.log("Video Server 1 Down..."); }
 
-      // Backup Server 2: Dreaded Global Downloader
+      // 🚀 Server 2: BTCH Global Bypass Engine
       if (!videoUrl) {
           try {
-              const res = await axios.get("https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(args), { timeout: 8000 });
-              videoUrl = res.data?.result?.video || res.data?.result?.download;
-          } catch (e) {}
+              const res = await axios.get("https://api.btch.bx2.xyz/api/download/ytmp4?url=" + encodeURIComponent(query), { timeout: 9000 });
+              videoUrl = res.data?.result?.video || res.data?.result?.url || res.data?.result;
+          } catch (e) { console.log("Video Server 2 Down..."); }
       }
 
       if (!videoUrl) {
           await m.react('❌');
-          return m.reply("_❌ වීඩියෝ සර්වර්ස් සියල්ලම කාර්යබහුලයි. පසුව උත්සාහ කරන්න!_");
+          return m.reply("_❌ වීඩියෝ සර්වර්ස් සියල්ලම මේ වෙලාවේ කාර්යබහුලයි. පසුව උත්සාහ කරන්න!_");
       }
 
-      // Buffer Streaming directly to RAM
-      const stream = await axios.get(videoUrl, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 45000 });
+      // Stream Direct To Buffer
+      const stream = await axios.get(videoUrl, { responseType: 'arraybuffer', headers: SAFE_HEADERS, timeout: 50000 });
       const buffer = Buffer.from(stream.data);
 
       await m.react('✅');
@@ -93,7 +94,7 @@ Sparky({
 });
 
 // ==========================================
-// 🎵 3. YTA COMMAND (HIGH QUALITY AUDIO ENGINE)
+// 🎵 3. YTA COMMAND (TURBO AUDIO ENGINE)
 // ==========================================
 Sparky({
   name: "yta",
@@ -103,23 +104,32 @@ Sparky({
 }, async ({ m, client, args }) => {
     try {
       args = args || m.quoted?.text;
-      if (!args) return await m.reply(lang.NEED_URL);
-      if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK);
+      const query = Array.isArray(args) ? args.join(" ") : args;
+      if (!query) return await m.reply(lang.NEED_URL);
+      if (!await isUrl(query)) return await m.reply(lang.INVALID_LINK);
       
       await m.react('⬇️');
       let mp3Url = null;
       
-      // New Active Server 1: Maher Zubair Core Engine
+      // 🚀 Server 1: BK9 Audio Engine
       try {
-          const res = await axios.get("https://api.maher-zubair.tech" + "/download/ytmp3?url=" + encodeURIComponent(args), { timeout: 8000 });
-          mp3Url = res.data?.result?.link || res.data?.result?.url;
+          const res = await axios.get("https://bk9.fun/download/ytmp3?url=" + encodeURIComponent(query), { timeout: 9000 });
+          mp3Url = res.data?.result?.download || res.data?.BK9?.download || res.data?.result?.url;
       } catch (e) {}
 
-      // Backup Server 2: Dreaded Global Downloader
+      // 🚀 Server 2: BTCH Audio Engine
       if (!mp3Url) {
           try {
-              const res = await axios.get("https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(args), { timeout: 8000 });
-              mp3Url = res.data?.result?.audio || res.data?.result?.mp3;
+              const res = await axios.get("https://api.btch.bx2.xyz/api/download/ytmp3?url=" + encodeURIComponent(query), { timeout: 9000 });
+              mp3Url = res.data?.result?.audio || res.data?.result?.url;
+          } catch (e) {}
+      }
+
+      // 🚀 Server 3: Vreden Premium Multi-DL
+      if (!mp3Url) {
+          try {
+              const res = await axios.get("https://api.vreden.my.id/api/ytmp3?url=" + encodeURIComponent(query), { timeout: 9000 });
+              mp3Url = res.data?.result?.download?.url || res.data?.result?.url;
           } catch (e) {}
       }
 
@@ -140,17 +150,18 @@ Sparky({
 });
 
 // ==========================================
-// 🚀 4 & 5. PLAY & SONG HYBRID TUNED ENGINE
+// 🚀 4 & 5. PLAY & SONG HYBRID TURBO ENGINE
 // ==========================================
 const playSongHandler = async ({ m, client, args }) => {
     try {
       args = args || m.quoted?.text;
-      if (!args) return await m.reply(lang.NEED_Q);
+      const query = Array.isArray(args) ? args.join(" ") : args;
+      if (!query) return await m.reply(lang.NEED_Q);
       
       await m.react('🔎');
       
-      // 100% Stable Local Search - කිසිලෙසකවත් ටයිම්අවුට් නොවේ
-      const searchList = await yts(args);
+      // Local Stable Search Engine
+      const searchList = await yts(query);
       if (!searchList || searchList.length === 0) {
           await m.react('❌');
           return m.reply("_❌ මචං ඔය නමින් සින්දුවක් YouTube එකෙන් හොයාගන්න ලැබුණේ නැහැ!_");
@@ -162,23 +173,31 @@ const playSongHandler = async ({ m, client, args }) => {
 
       let finalMp3Url = null;
 
-      // Server 1 Fetch
+      // 🚀 Try Server 1 (BK9 Engine)
       try {
-          const res = await axios.get("https://api.maher-zubair.tech" + "/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 8000 });
-          finalMp3Url = res.data?.result?.link || res.data?.result?.url;
+          const res = await axios.get("https://bk9.fun/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 9000 });
+          finalMp3Url = res.data?.result?.download || res.data?.BK9?.download || res.data?.result?.url;
       } catch (e) {}
 
-      // Server 2 Fetch (Fallback)
+      // 🚀 Try Server 2 (BTCH Engine)
       if (!finalMp3Url) {
           try {
-              const res = await axios.get("https://api." + "dreaded" + ".site/api/ytdl?url=" + encodeURIComponent(play.url), { timeout: 8000 });
-              finalMp3Url = res.data?.result?.audio || res.data?.result?.mp3;
+              const res = await axios.get("https://api.btch.bx2.xyz/api/download/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 9000 });
+              finalMp3Url = res.data?.result?.audio || res.data?.result?.url;
+          } catch (e) {}
+      }
+
+      // 🚀 Try Server 3 (Vreden Engine)
+      if (!finalMp3Url) {
+          try {
+              const res = await axios.get("https://api.vreden.my.id/api/ytmp3?url=" + encodeURIComponent(play.url), { timeout: 9000 });
+              finalMp3Url = res.data?.result?.download?.url || res.data?.result?.url;
           } catch (e) {}
       }
 
       if (!finalMp3Url) {
           await m.react('❌');
-          return m.reply("_❌ සින්දුව ඩවුන්ලෝඩ් කරගන්න ලැබුනේ නැහැ, සර්වර්ස් ඩවුන්! පොඩ්ඩකින් ආයෙ ට්‍රැයි කරන්න._");
+          return m.reply("_❌ සින්දුව බාගන්න ලැබුනේ නැහැ, සර්වර්ස් සියල්ලම බිසී! පොඩ්ඩකින් ආයෙ ට්‍රැයි කරන්න._");
       }
 
       // Fast Stream to RAM Buffer
