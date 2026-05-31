@@ -15,15 +15,13 @@ Sparky({
             return await m.reply("_❌ කරුණාකර ඕඩියෝ එකකට හෝ වොයිස් නෝට් එකකට Reply කරලා .bass ගහන්න!_");
         }
 
-        // 🎧 ඕනෑම විදිහක ඕඩියෝ හෝ වීඩියෝ ටයිප් එකක් අල්ලගන්නා Bulletproof සිස්ටම් එක
         const q = m.quoted;
-        const isAudioOrVideo = 
-            q.mtype?.toLowerCase().includes("audio") || 
-            q.type?.toLowerCase().includes("audio") || 
-            q.mtype?.toLowerCase().includes("video") || 
-            q.type?.toLowerCase().includes("video") ||
-            q.message?.audioMessage ||
-            q.message?.videoMessage;
+        
+        // 🛡️ Safe Mimetype Extraction (Error නොවදින සුපිරිම ක්‍රමය)
+        const mime = q.mimetype || q.msg?.mimetype || "";
+        
+        // 🎧 රිප්ලයි කරපු මැසේජ් එක ඕඩියෝ හෝ වීඩියෝ එකක්ද කියලා බලනවා
+        const isAudioOrVideo = mime.includes("audio") || mime.includes("video");
 
         if (!isAudioOrVideo) {
             return await m.reply("_❌ කරුණාකර ඕඩියෝ එකකට හෝ වොයිස් නෝට් එකකට Reply කරලා .bass ගහන්න!_");
@@ -32,7 +30,7 @@ Sparky({
         await m.react("🎧"); // වැඩේ පටන් ගත්තා කියලා හෙඩ්ෆෝන් එකෙන් රියැක්ට් කරනවා
 
         // 📥 මීඩියා එක ඩවුන්ලෝඩ් කරගන්නවා
-        const media = await m.quoted.download();
+        const media = await q.download();
         if (!media) return await m.reply("_❌ ඕඩියෝ එක ඩවුන්ලෝඩ් කරගැනීමේ ගැටලුවක් ඇතිවුණා!_");
 
         // 📂 ටෙම්පරි ෆයිල් පාත් සෙට් කරගන්නවා
