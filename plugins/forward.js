@@ -21,31 +21,79 @@ function toJid(input) {
     }
 
     const number = text.replace(/[^0-9]/g, "");
-
     if (!number) return "";
+
     return `${number}@s.whatsapp.net`;
 }
 
-function buildQuotedMessage(m) {
+function normalizeQuotedMessage(m) {
     const q = m.quoted;
-
     if (!q) return null;
 
-    if (q.key && q.message) {
-        return q;
-    }
-
-    if (!q.message) return null;
+    const message = q.message || q?.quotedMessage;
+    if (!message) return null;
 
     return {
         key: {
-            remoteJid: m.jid,
-            id: q.stanzaId || q.key?.id || q.id,
-            fromMe: q.fromMe || false,
-            participant: q.sender || q.participant || m.sender
+            remoteJid: q.key?.remoteJid || m.jid,
+            id: q.key?.id || q.stanzaId || q.id,
+            fromMe: q.key?.fromMe ?? q.fromMe ?? false,
+            participant: q.key?.participant || q.sender || q.participant || m.sender
         },
-        message: q.message
+        message
     };
+}
+
+function extractTextFallback(quoted) {
+    const msg = quoted?.message || {};
+
+    return (
+        msg.conversation ||
+        msg.extendedTextMessage?.text ||
+        msg.imageMessage?.caption ||
+        msg.videoMessage?.caption ||
+        msg.documentMessage?.caption ||
+        ""
+    );
+}
+
+function loadBaileys() {
+    try {
+        return require("baileys");
+    } catch {
+        throw new Error("baileys package එක හමු වුණේ නෑ. package.json එකේ baileys තියෙනවද බලන්න.");
+    }
+}
+
+async function safeForward(client, targetJid, quoted) {
+    const {
+        generateForwardMessageContent,
+        generateWAMessageFromContent,
+        getContentType
+    } = loadBaileys();
+
+    const content = await generateForwardMessageContent(quoted, false);
+    const type = getContentType(content);
+
+    if (!type || !content[type]) {
+        throw new Error("Forward content එක generate කරන්න බැරි වුණා.");
+    }
+
+    if (typeof content[type] === "object") {
+        content[type].contextInfo = {
+            ...(content[type].contextInfo || {}),
+            forwardingScore: 999,
+            isForwarded: true
+        };
+    }
+
+    const waMessage = await generateWAMessageFromContent(targetJid, content, {
+        userJid: client.user?.id || client.user?.jid
+    });
+
+    await client.relayMessage(targetJid, waMessage.message, {
+        messageId: waMessage.key.id
+    });
 }
 
 async function forwardHandler({ client, m, args }) {
@@ -55,53 +103,50 @@ async function forwardHandler({ client, m, args }) {
 
         if (!targetJid) {
             return await m.reply(
-                "📤 Forward කරන්න number/JID එක දෙන්න මචං.\n\n" +
-                "උදා:\n" +
-                ".forward 94712345678\n" +
-                ".foward 94712345678\n" +
-                ".forward 94712345678@s.whatsapp.net"
+                "📤 Forward කරන්න number/JID එක දෙන්න.\n\n" +
+                "උදා:\n.forward 94712345678\n" +
+                ".forward 120363xxxx@g.us"
             );
         }
 
         if (!m.quoted) {
             return await m.reply(
-                "📌 Forward කරන්න ඕන message/media/document එකට reply කරලා command එක දෙන්න.\n\n" +
-                "උදා:\n" +
-                "Video එකකට reply → .forward 94712345678"
+                "📌 Forward කරන්න ඕන text/photo/video/document එකට reply කරලා command එක දෙන්න.\n\n" +
+                "උදා:\n.forward 94712345678"
             );
         }
 
         await m.react?.("📤");
 
-        const quotedMessage = buildQuotedMessage(m);
+        const quoted = normalizeQuotedMessage(m);
 
-        if (!quotedMessage) {
+        if (!quoted) {
             await m.react?.("❌");
             return await m.reply("❌ Quoted message එක read කරන්න බැරි වුණා.");
         }
 
-        if (typeof m.forwardMessage === "function") {
-            await m.forwardMessage(targetJid, quotedMessage, {});
-        } else {
+        try {
+            await safeForward(client, targetJid, quoted);
+        } catch (forwardErr) {
+            const text = extractTextFallback(quoted);
+
+            if (!text) throw forwardErr;
+
             await client.sendMessage(targetJid, {
-                forward: quotedMessage
+                text,
+                contextInfo: {
+                    forwardingScore: 999,
+                    isForwarded: true
+                }
             });
         }
 
         await m.react?.("✅");
-
-        await m.reply(
-            `✅ Forward කළා මචං.\n\n` +
-            `📍 Target: ${targetJid}`
-        );
+        await m.reply(`✅ Forward කළා.\n\n📍 Target: ${targetJid}`);
     } catch (err) {
         console.log("Forward command error:", err);
         await m.react?.("❌");
-
-        await m.reply(
-            "❌ Forward කරන්න බැරි වුණා.\n\n" +
-            "හේතුව: " + err.message
-        );
+        await m.reply("❌ Forward කරන්න බැරි වුණා.\n\nහේතුව: " + err.message);
     }
 }
 
