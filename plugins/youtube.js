@@ -1,20 +1,10 @@
-const { Sparky, isPublic, yts, yta } = require("../lib");
+const { Sparky, isPublic, YtInfo, yts, yta, ytv } = require("../lib");
+const { getString, isUrl } = require("./pluginsCore");
 const axios = require("axios");
 const { spawn } = require("child_process");
 
+const lang = getString("download") || {};
 const ffmpegBin = "ffmpeg";
-
-function getArgsText(args, m) {
-    if (Array.isArray(args)) return args.join(" ").trim();
-    if (typeof args === "string") return args.trim();
-
-    return (
-        m.quoted?.text ||
-        m.text?.replace(/^[./!#]music\s*/i, "") ||
-        m.body?.replace(/^[./!#]music\s*/i, "") ||
-        ""
-    ).trim();
-}
 
 function sanitizeFileName(name) {
     return String(name || "music")
@@ -46,9 +36,7 @@ async function downloadToBuffer(url) {
         responseType: "arraybuffer",
         timeout: 120000,
         maxRedirects: 5,
-        headers: {
-            "User-Agent": "Mozilla/5.0"
-        },
+        headers: { "User-Agent": "Mozilla/5.0" },
         maxContentLength: 80 * 1024 * 1024,
         maxBodyLength: 80 * 1024 * 1024
     });
@@ -109,22 +97,130 @@ function convertToPhoneMp3(inputBuffer) {
     });
 }
 
-Sparky({
-    name: "music",
-    fromMe: isPublic,
-    category: "download",
-    desc: "Song name එකෙන් phone-compatible MP3 audio එකක් send කරන්න"
-}, async ({ client, m, args }) => {
-    try {
-        const query = getArgsText(args, m);
+async function sendPhoneSupportedMp3(client, m, song) {
+    const rawAudioUrl = await yta(song.url);
+    if (!rawAudioUrl) throw new Error("Audio download link එක ලැබුණේ නෑ.");
 
-        if (!query) {
+    const rawBuffer = await downloadToBuffer(rawAudioUrl);
+    if (!rawBuffer || rawBuffer.length < 1000) throw new Error("Audio download failed.");
+
+    const mp3Buffer = await convertToPhoneMp3(rawBuffer);
+    const fileName = `${sanitizeFileName(song.title)}.mp3`;
+
+    await client.sendMessage(m.jid, {
+        audio: mp3Buffer,
+        mimetype: "audio/mpeg",
+        fileName,
+        ptt: false
+    }, { quoted: m });
+}
+
+Sparky({
+    name: "yts",
+    fromMe: isPublic,
+    category: "youtube",
+    desc: "Search in YouTube"
+}, async ({ m, client, args }) => {
+    try {
+        if (!args) return await m.reply(lang.NEED_Q || "Need a Query");
+
+        if (await isUrl(args)) {
+            const yt = await YtInfo(args);
+            if (!yt) return await m.reply("❌ YouTube info ගන්න බැරි වුණා.");
+
+            return await client.sendMessage(m.jid, {
+                image: { url: yt.thumbnail },
+                caption:
+                    `*Title:* ${yt.title}\n` +
+                    `*Author:* ${yt.author}\n` +
+                    `*URL:* ${args}\n` +
+                    `*Video ID:* ${yt.videoId}`
+            }, { quoted: m });
+        }
+
+        const videos = await yts(args);
+
+        if (!videos || !videos.length) {
+            return await m.reply("❌ Result එකක් හමු වුණේ නෑ.");
+        }
+
+        const result = videos.slice(0, 10).map((video, i) => {
+            return `${i + 1}. *${video.title}*\n⏱️ ${video.duration || "Unknown"}\n🔗 ${video.url}`;
+        });
+
+        return await m.reply(`_*Result Of ${args} 🔍*_\n\n` + result.join("\n\n"));
+    } catch (err) {
+        console.log("YTS error:", err);
+        await m.reply("❌ YTS error:\n" + err.message);
+    }
+});
+
+Sparky({
+    name: "ytv",
+    fromMe: isPublic,
+    category: "youtube",
+    desc: "YouTube video download"
+}, async ({ m, client, args }) => {
+    try {
+        args = args || m.quoted?.text;
+
+        if (!args) return await m.reply(lang.NEED_URL || "Need a YouTube URL");
+        if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK || "Invalid link");
+
+        await m.react("⬇️");
+
+        const url = await ytv(args);
+
+        await m.sendMsg(m.jid, url, { quoted: m }, "video");
+
+        await m.react("✅");
+    } catch (error) {
+        console.log("YTV error:", error);
+        await m.react("❌");
+        await m.reply("❌ YTV error:\n" + error.message);
+    }
+});
+
+Sparky({
+    name: "yta",
+    fromMe: isPublic,
+    category: "youtube",
+    desc: "YouTube audio download"
+}, async ({ m, client, args }) => {
+    try {
+        args = args || m.quoted?.text;
+
+        if (!args) return await m.reply(lang.NEED_URL || "Need a YouTube URL");
+        if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK || "Invalid link");
+
+        await m.react("⬇️");
+
+        const song = {
+            title: "YouTube Audio",
+            url: args
+        };
+
+        await sendPhoneSupportedMp3(client, m, song);
+
+        await m.react("✅");
+    } catch (error) {
+        console.log("YTA error:", error);
+        await m.react("❌");
+        await m.reply("❌ YTA error:\n" + error.message);
+    }
+});
+
+async function songSearchHandler({ m, client, args }) {
+    try {
+        args = args || m.quoted?.text;
+
+        if (!args) {
             return await m.reply("🎵 Song name එකක් දෙන්න.\n\nඋදා: .music mithaya myam");
         }
 
         await m.react("🔎");
 
-        const results = await yts(query);
+        const results = await yts(args);
         const song = pickBestSong(results);
 
         if (!song || !song.url) {
@@ -132,29 +228,34 @@ Sparky({
             return await m.reply("❌ Song එක හොයාගන්න බැරි වුණා.");
         }
 
-        await m.reply(`🎧 *${song.title}*\n⏱️ ${song.duration || "Unknown"}\n\n_Preparing phone supported MP3..._`);
+        await m.reply(
+            `🎧 *${song.title}*\n` +
+            `⏱️ ${song.duration || "Unknown"}\n\n` +
+            `_Preparing phone supported MP3..._`
+        );
+
         await m.react("⬇️");
 
-        const rawAudioUrl = await yta(song.url);
-        if (!rawAudioUrl) throw new Error("Audio download link එක ලැබුණේ නෑ.");
-
-        const rawBuffer = await downloadToBuffer(rawAudioUrl);
-        if (!rawBuffer || rawBuffer.length < 1000) throw new Error("Audio download failed.");
-
-        const mp3Buffer = await convertToPhoneMp3(rawBuffer);
-        const fileName = `${sanitizeFileName(song.title)}.mp3`;
-
-        await client.sendMessage(m.jid, {
-            audio: mp3Buffer,
-            mimetype: "audio/mpeg",
-            fileName,
-            ptt: false
-        }, { quoted: m });
+        await sendPhoneSupportedMp3(client, m, song);
 
         await m.react("✅");
-    } catch (err) {
-        console.log("Music command error:", err);
+    } catch (error) {
+        console.log("Song/Music error:", error);
         await m.react("❌");
-        await m.reply("❌ Music command error:\n" + err.message);
+        await m.reply("❌ Song/Music error:\n" + error.message);
     }
-});
+}
+
+Sparky({
+    name: "song",
+    fromMe: isPublic,
+    category: "youtube",
+    desc: "Song name එකෙන් phone supported MP3 audio එකක් send කරන්න"
+}, songSearchHandler);
+
+Sparky({
+    name: "music",
+    fromMe: isPublic,
+    category: "youtube",
+    desc: "Song name එකෙන් phone supported MP3 audio එකක් send කරන්න"
+}, songSearchHandler);
