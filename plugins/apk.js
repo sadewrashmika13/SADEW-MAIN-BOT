@@ -50,7 +50,7 @@ Sparky({
         const appName = bestMatch.title;
         const appSize = bestMatch.size;
 
-        await m.reply(`✅ *Found:* ${appName}\n📦 Size: ${appSize}\n⬇️ Getting download link...`);
+        await m.reply(`✅ *Found:* ${appName}\n📦 Size: ${appSize}\n⬇️ Getting sadew md download link...`);
 
         // 2. Get the download link from the API (this returns JSON)
         const downloadApiUrl = `${API_BASE}/download/aptoide?package=${packageName}&apitoken=${API_TOKEN}`;
@@ -88,7 +88,7 @@ Sparky({
         }
 
         const fileName = `${appName.replace(/[^a-z0-9]/gi, '_')}.apk`;
-        const caption = `📲 *${appName}*\n📦 Size: ${actualSizeMB} MB\n📥 *APK ready for installation*\n\n> *Powered by Aptoide*`;
+        const caption = `📲 *${appName}*\n📦 Size: ${actualSizeMB} MB\n📥 *APK ready for installation*\n\n> *Powered by sadew md*`;
 
         await client.sendMessage(m.jid, {
             document: buffer,
