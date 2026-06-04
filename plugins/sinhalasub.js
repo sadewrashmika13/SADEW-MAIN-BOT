@@ -13,32 +13,15 @@ function getQuery(args) {
     return "";
 }
 
+// Global session store for movie data
 if (!global.movieSessions) global.movieSessions = new Map();
-
-// Prioritized server order (best first)
-const SERVER_PRIORITY = ["Pixeldrain", "FilesPayout", "DLServer-01", "DLServer-02", "Telagram"];
-
-function getBestLinkForQuality(links, targetQuality) {
-    // Filter links that match the quality (e.g., "HD 720p" or "SD 480p")
-    const matched = links.filter(link => link.size === targetQuality);
-    if (matched.length === 0) return null;
-    // Sort by priority
-    matched.sort((a, b) => {
-        const aIdx = SERVER_PRIORITY.indexOf(a.quality);
-        const bIdx = SERVER_PRIORITY.indexOf(b.quality);
-        if (aIdx === -1) return 1;
-        if (bIdx === -1) return -1;
-        return aIdx - bIdx;
-    });
-    return matched[0].direct_link;
-}
 
 Sparky({
     name: "movie",
     alias: ["cinema", "films"],
     category: "download",
     fromMe: isPublic,
-    desc: "🎬 සිංහල චිත්‍රපට සොයා සෘජුවම බාගන්න (720p/480p)"
+    desc: "🎬 සිංහල උපසිරැසි චිත්‍රපට සොයා ගන්න"
 }, async ({ client, m, args }) => {
     const query = getQuery(args);
     if (!query) {
@@ -48,28 +31,15 @@ Sparky({
 *Example:* ${m.prefix}movie kishkindha
 
 *After search:* ${m.prefix}movie <number>
-*Then choose quality:* ${m.prefix}movie 1 (720p) හෝ ${m.prefix}movie 2 (480p)`);
+*Then download:* ${m.prefix}get <1|2>`);
     }
 
+    // If user already has search results and enters a number -> select that movie
     const session = global.movieSessions.get(m.sender);
-
-    // Step 3: Choose quality (1=720p, 2=480p)
-    if (session && session.step === "awaiting_quality" && (query === "1" || query === "2")) {
-        const quality = query === "1" ? "HD 720p" : "SD 480p";
-        const selectedLink = getBestLinkForQuality(session.allLinks, quality);
-        if (!selectedLink) {
-            return m.reply(`❌ No ${quality} link available for this movie.`);
-        }
-        await downloadAndSend(client, m, selectedLink, session.movieTitle, quality, session.subtitleLink);
-        global.movieSessions.delete(m.sender);
-        return;
-    }
-
-    // Step 2: Choose movie number → fetch links and show quality options
     if (session && session.step === "awaiting_movie" && !isNaN(query)) {
         const idx = parseInt(query) - 1;
         if (idx < 0 || idx >= session.results.length) {
-            return m.reply(`❌ Invalid number. Choose 1-${session.results.length}.`);
+            return m.reply(`❌ වැරදි අංකයක්. කරුණාකර 1-${session.results.length} අතර අංකයක් එවන්න.`);
         }
         const selected = session.results[idx];
         await fetchQualityOptions(client, m, selected.url, selected.title);
@@ -77,10 +47,10 @@ Sparky({
         return;
     }
 
-    // Step 1: Search
+    // New search
     await m.react("🔍");
     await client.sendPresenceUpdate('composing', m.jid);
-    await m.reply(`🔎 Searching for "${query}"...`);
+    await m.reply(`🔎 සොයමින් "${query}"...`);
 
     try {
         const searchUrl = `${API_BASE}/search?apiKey=${API_KEY}&text=${encodeURIComponent(query)}`;
@@ -88,15 +58,15 @@ Sparky({
 
         if (!data?.success || !data?.results?.length) {
             await m.react("❌");
-            return m.reply(`❌ No results found for "${query}".`);
+            return m.reply(`❌ "${query}" සඳහා ප්‍රතිඵල හමු නොවිණි.`);
         }
 
         const results = data.results.slice(0, 8);
-        let listMsg = `🎬 *සිංහල චිත්‍රපට ප්‍රතිඵල*\n🔍 *${query}*\n📊 Found: ${results.length}\n\n`;
+        let listMsg = `🎬 *සිංහල උපසිරැසි ප්‍රතිඵල*\n🔍 *${query}*\n📊 හමු වූ: ${results.length}\n\n`;
         results.forEach((movie, i) => {
             listMsg += `${i+1}. *${movie.title}*\n`;
         });
-        listMsg += `\n📌 *To see available qualities:* ${m.prefix}movie <number>\nExample: ${m.prefix}movie 1`;
+        listMsg += `\n📌 *චිත්‍රපටය තෝරන්න:* ${m.prefix}movie <අංකය>\nඋදා: ${m.prefix}movie 1`;
 
         await client.sendMessage(m.jid, { text: listMsg }, { quoted: m });
 
@@ -105,20 +75,20 @@ Sparky({
             results: results,
             timestamp: Date.now()
         });
-        setTimeout(() => global.movieSessions.delete(m.sender), 5 * 60 * 1000);
+        setTimeout(() => global.movieSessions.delete(m.sender), 5 * 60 * 1000); // auto clear after 5 min
 
         await m.react("✅");
     } catch (err) {
         console.error("Search error:", err);
         await m.react("❌");
-        m.reply(`❌ Search failed: ${err.message.substring(0, 100)}`);
+        m.reply(`❌ සෙවීම අසාර්ථකයි: ${err.message.substring(0, 100)}`);
     }
 });
 
 async function fetchQualityOptions(client, m, movieUrl, title) {
     await m.react("⏳");
     await client.sendPresenceUpdate('composing', m.jid);
-    await m.reply(`📥 Fetching download options for *${title}*...`);
+    await m.reply(`📥 බාගැනීම් විකල්ප සොයමින් *${title}*...`);
 
     try {
         const dlUrl = `${API_BASE}/dl?apiKey=${API_KEY}&text=${encodeURIComponent(movieUrl)}`;
@@ -126,32 +96,31 @@ async function fetchQualityOptions(client, m, movieUrl, title) {
 
         if (!data?.success || !data?.results?.links?.length) {
             await m.react("❌");
-            return m.reply(`❌ No download links found for "${title}".`);
+            return m.reply(`❌ "${title}" සඳහා බාගැනීම් සබැඳි හමු නොවිණි.`);
         }
 
         const allLinks = data.results.links;
         const videoLinks = allLinks.filter(l => l.quality !== "Subtitles");
         const subLink = allLinks.find(l => l.quality === "Subtitles");
 
-        // Check available qualities
         const has720p = videoLinks.some(l => l.size === "HD 720p");
         const has480p = videoLinks.some(l => l.size === "SD 480p");
 
         if (!has720p && !has480p) {
             await m.react("❌");
-            return m.reply(`❌ No standard qualities (720p/480p) found.`);
+            return m.reply(`❌ මෙම චිත්‍රපටය සඳහා 720p හෝ 480p quality නැත.`);
         }
 
-        let qualMsg = `🎬 *${title}*\n📥 *Choose quality:*\n\n`;
-        if (has720p) qualMsg += `1. *720p* (HD) – Recommended for faster download\n`;
-        if (has480p) qualMsg += `2. *480p* (SD) – Smaller file\n`;
-        qualMsg += `\n📌 *Reply with:* ${m.prefix}movie 1 (for 720p) or ${m.prefix}movie 2 (for 480p)`;
+        let qualMsg = `🎬 *${title}*\n📥 *Quality එක තෝරන්න:*\n\n`;
+        if (has720p) qualMsg += `1. *720p* (HD) – වේගවත් බාගැනීම\n`;
+        if (has480p) qualMsg += `2. *480p* (SD) – කුඩා ගොනුව\n`;
+        qualMsg += `\n📌 *බාගැනීමට:* ${m.prefix}get <අංකය>\nඋදා: ${m.prefix}get 1 (720p සඳහා)`;
 
         await client.sendMessage(m.jid, { text: qualMsg }, { quoted: m });
 
         global.movieSessions.set(m.sender, {
             step: "awaiting_quality",
-            allLinks: videoLinks,
+            videoLinks: videoLinks,
             subtitleLink: subLink ? subLink.direct_link : null,
             movieTitle: title,
             timestamp: Date.now()
@@ -162,52 +131,6 @@ async function fetchQualityOptions(client, m, movieUrl, title) {
     } catch (err) {
         console.error("Quality fetch error:", err);
         await m.react("❌");
-        m.reply(`❌ Failed to fetch options: ${err.message.substring(0, 100)}`);
-    }
-}
-
-async function downloadAndSend(client, m, downloadUrl, title, quality, subtitleLink) {
-    await m.react("⏳");
-    await m.reply(`⬇️ Downloading *${title}* (${quality})...\nThis may take a moment depending on file size.`);
-
-    try {
-        const response = await axios.get(downloadUrl, {
-            responseType: 'arraybuffer',
-            timeout: 120000,
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            maxRedirects: 5
-        });
-
-        const buffer = Buffer.from(response.data);
-        const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-
-        if (buffer.length < 500000) {
-            throw new Error(`File too small (${fileSizeMB} MB). Link may be invalid.`);
-        }
-
-        const fileName = `${title.replace(/[^a-z0-9]/gi, '_')}_${quality}.mp4`;
-        let caption = `🎬 *${title}*\n📀 Quality: ${quality}\n📦 Size: ${fileSizeMB} MB`;
-        if (subtitleLink) caption += `\n📝 *Subtitles:* ${subtitleLink}`;
-        caption += `\n\n> *Direct download via SADEW-MINI*`;
-
-        await client.sendMessage(m.jid, {
-            document: buffer,
-            mimetype: "video/mp4",
-            fileName: fileName,
-            caption: caption
-        }, { quoted: m });
-
-        await m.react("✅");
-        await m.reply(`✅ *${title}* (${quality}) sent successfully!`);
-    } catch (err) {
-        console.error("Download error:", err);
-        await m.react("❌");
-        let errorMsg = `❌ *Download failed*\n\n`;
-        if (err.message.includes("timeout")) {
-            errorMsg += `The file is large or server is slow. Try a lower quality (480p) or use the Pixeldrain link manually.`;
-        } else {
-            errorMsg += `Error: ${err.message.substring(0, 100)}`;
-        }
-        await m.reply(errorMsg);
+        m.reply(`❌ බාගැනීම් විකල්ප ලබා ගැනීම අසාර්ථකයි: ${err.message.substring(0, 100)}`);
     }
 }
