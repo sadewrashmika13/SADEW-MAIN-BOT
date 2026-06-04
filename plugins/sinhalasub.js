@@ -1,100 +1,122 @@
-// commands/sinhalasub.js
+// commands/movie.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
-// API Configuration
 const API_KEY = "zan_FIAO7Ayh_eo1vllkep6";
-const API_BASE_URL = "https://api.zanta-mini.store/api/sinhalasub";
+const API_BASE = "https://api.zanta-mini.store/api/sinhalasub";
 
-// Helper function to format the search results
-function formatSearchResults(movies) {
-    let message = "🎬 *සිංහල උපසිරැසි ප්‍රතිඵල*\n\n";
-    movies.forEach((movie, index) => {
-        message += `*${index + 1}. ${movie.title}*\n`;
-        message += `   🔗 URL: ${movie.url}\n\n`;
-    });
-    message += "📌 *බාගැනීමට*: `.sdl <URL>`";
-    return message;
+function getQuery(args) {
+    if (!args) return "";
+    if (Array.isArray(args)) return args.join(" ").trim();
+    if (typeof args === "string") return args.trim();
+    if (typeof args === "object") return Object.values(args).join(" ").trim();
+    return "";
 }
 
-// Helper function to format the download results
-function formatDownloadResults(linksData) {
-    let message = "📥 *ඩවුන්ලෝඩ් සබැඳි*\n\n";
-    // Filter for SRT subtitles and video links
-    const subtitles = linksData.find(link => link.quality === "Subtitles");
-    const videoLinks = linksData.filter(link => link.quality !== "Subtitles");
+if (!global.movieSessions) global.movieSessions = new Map();
 
-    if (videoLinks.length) {
-        message += "*වීඩියෝ ගොනු:*\n";
-        videoLinks.forEach(link => {
-            message += `   ▶️ ${link.quality} (${link.size})\n`;
-            message += `   🔗 ${link.direct_link}\n\n`;
-        });
-    }
-    if (subtitles) {
-        message += "*උපසිරැසි ගොනු:*\n";
-        message += `   📝 SRT ගොනුව: ${subtitles.direct_link}\n`;
-    }
-    return message;
-}
-
-// Main command
 Sparky({
-    name: "sinhalasub",
-    alias: ["ss"],
+    name: "movie",
+    alias: ["cinema", "films"],
     category: "download",
     fromMe: isPublic,
-    desc: "Search for Sinhala subtitles (e.g., .ss The Croods)"
+    desc: "🎬 සිංහල චිත්‍රපට සෙවීම සහ බාගැනීම"
 }, async ({ client, m, args }) => {
-    const query = args.join(" ");
-    if (!query) return m.reply("❌ Please provide a movie name. Example: `.ss The Croods`");
+    const query = getQuery(args);
+    if (!query) {
+        return m.reply(`🎬 *සිංහල චිත්‍රපට සෙවුම*
 
+*Usage:* ${m.prefix}movie <movie name>
+*Example:* ${m.prefix}movie kishkindha
+
+*After search, type:* ${m.prefix}movie <number>
+*Example:* ${m.prefix}movie 1`);
+    }
+
+    const session = global.movieSessions.get(m.sender);
+
+    // If user already has search results and enters a number -> download
+    if (session && session.step === "awaiting_download" && !isNaN(query)) {
+        const idx = parseInt(query) - 1;
+        if (idx < 0 || idx >= session.results.length) {
+            return m.reply(`❌ Invalid number. Choose 1-${session.results.length}.`);
+        }
+        const selected = session.results[idx];
+        await fetchDownloadLinks(client, m, selected.url, selected.title);
+        global.movieSessions.delete(m.sender);
+        return;
+    }
+
+    // Otherwise, search
     await m.react("🔍");
-    const searchUrl = `${API_BASE_URL}/search?apiKey=${API_KEY}&text=${encodeURIComponent(query)}`;
+    await client.sendPresenceUpdate('composing', m.jid);
+    await m.reply(`🔎 Searching for "${query}"...`);
 
     try {
-        const response = await axios.get(searchUrl);
-        if (response.data && response.data.success && response.data.results && response.data.results.length) {
-            const results = response.data.results;
-            const searchResultsMessage = formatSearchResults(results);
-            await client.sendMessage(m.jid, { text: searchResultsMessage }, { quoted: m });
-            // Store results in a session for later download
-            global.sinhalaSubResults = results;
-        } else {
-            await m.reply("❌ No results found for your query.");
+        const searchUrl = `${API_BASE}/search?apiKey=${API_KEY}&text=${encodeURIComponent(query)}`;
+        const { data } = await axios.get(searchUrl, { timeout: 15000 });
+
+        if (!data?.success || !data?.results?.length) {
+            await m.react("❌");
+            return m.reply(`❌ No results found for "${query}".`);
         }
-    } catch (error) {
-        console.error(error);
-        await m.reply("❌ An error occurred while searching. Please try again later.");
+
+        const results = data.results.slice(0, 8);
+        let listMsg = `🎬 *සිංහල උපසිරැසි ප්‍රතිඵල*\n🔍 *${query}*\n📊 Found: ${results.length}\n\n`;
+        results.forEach((movie, i) => {
+            listMsg += `${i+1}. *${movie.title}*\n   🔗 ${movie.url}\n\n`;
+        });
+        listMsg += `📌 *To download:* ${m.prefix}movie <number>\nExample: ${m.prefix}movie 1`;
+
+        await client.sendMessage(m.jid, { text: listMsg }, { quoted: m });
+
+        global.movieSessions.set(m.sender, {
+            step: "awaiting_download",
+            results: results,
+            timestamp: Date.now()
+        });
+        setTimeout(() => global.movieSessions.delete(m.sender), 5 * 60 * 1000);
+
+        await m.react("✅");
+    } catch (err) {
+        console.error("Movie search error:", err);
+        await m.react("❌");
+        m.reply(`❌ Search failed: ${err.message.substring(0, 100)}`);
     }
-    await m.react("✅");
 });
 
-// Download command
-Sparky({
-    name: "sinhalasubdl",
-    alias: ["sdl"],
-    category: "download",
-    fromMe: isPublic,
-    desc: "Download a movie or subtitle using its URL"
-}, async ({ client, m, args }) => {
-    const movieUrl = args.join(" ");
-    if (!movieUrl) return m.reply("❌ Please provide a valid movie URL. Example: `.sdl https://sinhalasub.lk/movies/...`");
-
+async function fetchDownloadLinks(client, m, movieUrl, title) {
     await m.react("⏳");
-    const downloadUrl = `${API_BASE_URL}/dl?apiKey=${API_KEY}&text=${encodeURIComponent(movieUrl)}`;
+    await client.sendPresenceUpdate('composing', m.jid);
+    await m.reply(`📥 Fetching download links for *${title}*...`);
 
     try {
-        const response = await axios.get(downloadUrl);
-        if (response.data && response.data.success && response.data.results && response.data.results.links) {
-            const downloadLinksMessage = formatDownloadResults(response.data.results.links);
-            await client.sendMessage(m.jid, { text: downloadLinksMessage }, { quoted: m });
-        } else {
-            await m.reply("❌ Could not retrieve download links for the provided URL.");
+        const dlUrl = `${API_BASE}/dl?apiKey=${API_KEY}&text=${encodeURIComponent(movieUrl)}`;
+        const { data } = await axios.get(dlUrl, { timeout: 15000 });
+
+        if (!data?.success || !data?.results?.links?.length) {
+            await m.react("❌");
+            return m.reply(`❌ No download links found for "${title}".`);
         }
-    } catch (error) {
-        console.error(error);
-        await m.reply("❌ An error occurred while fetching download links.");
+
+        const links = data.results.links;
+        const videoLinks = links.filter(l => l.quality !== "Subtitles");
+        const subLink = links.find(l => l.quality === "Subtitles");
+
+        let msg = `🎬 *${title}*\n\n📥 *Download Links*\n`;
+        videoLinks.forEach(link => {
+            msg += `▶️ *${link.quality}* (${link.size || 'N/A'})\n`;
+            msg += `🔗 ${link.direct_link}\n\n`;
+        });
+        if (subLink) {
+            msg += `📝 *Subtitles (SRT)*\n🔗 ${subLink.direct_link}\n`;
+        }
+
+        await client.sendMessage(m.jid, { text: msg }, { quoted: m });
+        await m.react("✅");
+    } catch (err) {
+        console.error("Download error:", err);
+        await m.react("❌");
+        m.reply(`❌ Download failed: ${err.message.substring(0, 100)}`);
     }
-    await m.react("✅");
-});
+}
