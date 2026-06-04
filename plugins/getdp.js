@@ -1,7 +1,11 @@
 // commands/getdp.js
 const { Sparky, isPublic } = require("../lib");
+const axios = require("axios");
 
-// Helper to wait a bit
+// Cache: store { url, timestamp } for each number
+if (!global.dpCache) global.dpCache = new Map();
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 Sparky({
@@ -9,7 +13,7 @@ Sparky({
     alias: ["dp", "getprofile"],
     category: "tools",
     fromMe: isPublic,
-    desc: "📸 Get WhatsApp profile picture, name, and about of any number"
+    desc: "📸 Get WhatsApp profile picture, name, and about"
 }, async ({ client, m, args }) => {
     let fullInput = (args && Array.isArray(args)) ? args.join('') : (args || '');
     if (!fullInput && m.text) {
@@ -19,12 +23,10 @@ Sparky({
     let number = fullInput.replace(/\D/g, '');
     
     if (!number || number.length < 10) {
-        return m.reply(`📸 *Profile Picture Fetcher*
+        return m.reply(`📸 *Profile Fetcher*
 
 *Usage:* .getdp94712345678
-*Example:* .getdp94753518443
-
-*Note:* Include country code (e.g., 94 for Sri Lanka)`);
+*Example:* .getdp94753518443`);
     }
 
     let jid = number + '@s.whatsapp.net';
@@ -33,11 +35,11 @@ Sparky({
     await m.reply(`🔍 Fetching profile for ${number}...`);
 
     try {
-        // 1. Check if number exists
+        // 1. Check existence
         const [exists] = await client.onWhatsApp(jid);
         if (!exists || !exists.exists) {
             await m.react("❌");
-            return m.reply(`❌ Number ${number} is not registered on WhatsApp.`);
+            return m.reply(`❌ Number ${number} not on WhatsApp.`);
         }
 
         // 2. Get contact name
@@ -46,7 +48,7 @@ Sparky({
             const contact = await client.contact[jid];
             if (contact && contact.name) name = contact.name;
             else if (contact && contact.notify) name = contact.notify;
-        } catch(e) { /* ignore */ }
+        } catch(e) {}
 
         // 3. Get about status
         let about = 'Not available';
@@ -55,45 +57,56 @@ Sparky({
             if (status && status.status) about = status.status;
         } catch(e) { about = 'Not available (Privacy)'; }
 
-        // 4. Get profile picture (with retry & delay)
+        // 4. Get profile picture – with cache and retry
         let ppUrl = null;
-        let attempt = 0;
-        while (attempt < 2 && !ppUrl) {
-            try {
-                // Try HD first
-                ppUrl = await client.profilePictureUrl(jid, 'image');
-            } catch (err) {
-                // If HD fails, try preview
+        let now = Date.now();
+        let cached = global.dpCache.get(number);
+        if (cached && (now - cached.timestamp) < CACHE_TTL) {
+            ppUrl = cached.url;
+        } else {
+            // Attempt to fetch (HD then preview)
+            for (let attempt = 0; attempt < 2; attempt++) {
                 try {
-                    ppUrl = await client.profilePictureUrl(jid, 'preview');
-                } catch (err2) {
-                    // Wait a bit before retry (rate limit avoidance)
-                    if (attempt === 0) await delay(1000);
+                    ppUrl = await client.profilePictureUrl(jid, 'image');
+                    break;
+                } catch (err) {
+                    try {
+                        ppUrl = await client.profilePictureUrl(jid, 'preview');
+                        break;
+                    } catch (err2) {
+                        if (attempt === 0) await delay(1500); // wait before retry
+                    }
                 }
             }
-            attempt++;
+            // Cache even if null (to avoid spamming)
+            global.dpCache.set(number, { url: ppUrl, timestamp: now });
         }
 
-        let caption = `📸 *WhatsApp Profile*\n\n`;
-        caption += `📞 *Number:* ${number}\n`;
-        caption += `👤 *Name:* ${name}\n`;
-        caption += `📝 *About:* ${about}\n`;
-        caption += `\n> *Powered by SADEW-MINI*`;
+        // Clear cache after 5 minutes (already handled)
+        setTimeout(() => global.dpCache.delete(number), CACHE_TTL);
+
+        let caption = `📸 *WhatsApp Profile*\n\n📞 *${number}*\n👤 *${name}*\n📝 *About:* ${about}\n\n> SADEW-MINI`;
 
         if (ppUrl) {
-            await client.sendMessage(m.jid, { image: { url: ppUrl }, caption: caption }, { quoted: m });
+            // Download image with axios to avoid extra API calls
+            try {
+                const imgRes = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 10000 });
+                const buffer = Buffer.from(imgRes.data);
+                await client.sendMessage(m.jid, { image: buffer, caption: caption }, { quoted: m });
+            } catch (imgErr) {
+                // fallback: send URL as text
+                await client.sendMessage(m.jid, { text: `${caption}\n\n🖼️ Profile picture URL (copy to browser):\n${ppUrl}` }, { quoted: m });
+            }
         } else {
-            await client.sendMessage(m.jid, { text: `🖼️ *No profile picture set*\n\n${caption}` }, { quoted: m });
+            await client.sendMessage(m.jid, { text: `🖼️ *No profile picture*\n\n${caption}` }, { quoted: m });
         }
         await m.react("✅");
     } catch (error) {
         console.error("GetDP error:", error);
         await m.react("❌");
-        let errMsg = `❌ Failed to fetch profile.\n\n`;
-        if (error.message.includes('timeout') || error.message.includes('rate')) {
-            errMsg += `WhatsApp is rate‑limiting requests. Please wait a minute and try again.`;
-        } else {
-            errMsg += `Error: ${error.message.substring(0, 100)}`;
+        let errMsg = `❌ Failed: ${error.message.substring(0, 150)}`;
+        if (error.message.includes('rate') || error.message.includes('too many')) {
+            errMsg += `\n\n⏳ WhatsApp is rate‑limiting. Please wait 1–2 minutes and try again.`;
         }
         await m.reply(errMsg);
     }
