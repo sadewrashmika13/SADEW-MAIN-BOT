@@ -1,78 +1,122 @@
-// commands/moddl.js
+// commands/mod.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
+// Helper to extract query from args
 function getQuery(args) {
     if (!args) return "";
     if (Array.isArray(args)) return args.join(" ").trim();
     if (typeof args === "string") return args.trim();
-    if (typeof args === "object") return Object.values(args).join(" ").trim();
     return "";
 }
 
 const API_KEY = "zan_FIAO7Ayh_eo1vllkep6";
 const API_BASE = "https://api.zanta-mini.store/api/modapk";
 
+// Store search results temporarily (expires after 5 minutes)
+if (!global.modStore) global.modStore = new Map();
+
 Sparky({
-    name: "moddl",
-    alias: ["moddownload"],
+    name: "mod",
     category: "download",
     fromMe: isPublic,
-    desc: "⬇️ Download MOD APK by number from search results"
+    desc: "🎮 Search and download MOD APK games (AN1.com)"
 }, async ({ client, m, args }) => {
-    const num = parseInt(getQuery(args));
-    if (isNaN(num)) {
-        return m.reply(`❌ *Usage:* ${m.prefix}moddl <number>\nExample: ${m.prefix}moddl 1\n\n*First search with:* ${m.prefix}mod <game name>`);
+    let full = getQuery(args);
+    if (!full) {
+        return m.reply(`🎮 *MOD APK Downloader*
+
+*Usage:*
+• Search: ${m.prefix}mod <game name>
+• Download: ${m.prefix}mod dl <number>
+
+*Examples:*
+${m.prefix}mod subway surfers
+${m.prefix}mod dl 1`);
     }
 
-    const session = global.modSearchResults?.get(m.sender);
-    if (!session || !session.results) {
-        return m.reply(`❌ No active search. Please run \`${m.prefix}mod <game name>\` first.`);
+    // ----- SUBCOMMAND: download -----
+    if (full.startsWith("dl ")) {
+        let num = parseInt(full.split(" ")[1]);
+        if (isNaN(num)) return m.reply(`❌ Invalid number. Usage: ${m.prefix}mod dl <number>`);
+
+        let session = global.modStore.get(m.sender);
+        if (!session || !session.results) {
+            return m.reply(`❌ No active search. Please run ${m.prefix}mod <game name> first.`);
+        }
+        if (num < 1 || num > session.results.length) {
+            return m.reply(`❌ Number must be between 1 and ${session.results.length}.`);
+        }
+
+        let selected = session.results[num-1];
+        let gameUrl = encodeURIComponent(selected.url);
+        let gameTitle = selected.title;
+
+        await m.react("⏳");
+        await client.sendPresenceUpdate('composing', m.jid);
+        await m.reply(`📥 Downloading *${gameTitle}* ...`);
+
+        try {
+            let dlRes = await axios.get(`${API_BASE}/dl?apiKey=${API_KEY}&url=${gameUrl}`, { timeout: 15000 });
+            if (!dlRes.data?.success || !dlRes.data?.download_url) throw new Error("No download link");
+
+            let apkRes = await axios.get(dlRes.data.download_url, {
+                responseType: 'arraybuffer',
+                timeout: 90000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+
+            let buffer = Buffer.from(apkRes.data);
+            let sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+            if (buffer.length < 500000) throw new Error("File too small");
+
+            let fileName = `${gameTitle.replace(/[^a-z0-9]/gi, '_')}.apk`;
+            let caption = `🎮 *${gameTitle}* [MOD]\n📦 ${sizeMB} MB\n📥 Ready for install`;
+
+            await client.sendMessage(m.jid, {
+                document: buffer,
+                mimetype: "application/vnd.android.package-archive",
+                fileName: fileName,
+                caption: caption
+            }, { quoted: m });
+
+            await m.react("✅");
+            global.modStore.delete(m.sender); // clear session
+        } catch (err) {
+            console.error("Download error:", err);
+            await m.react("❌");
+            m.reply(`❌ Download failed: ${err.message.substring(0, 100)}`);
+        }
+        return;
     }
 
-    if (num < 1 || num > session.results.length) {
-        return m.reply(`❌ Invalid number. Choose 1-${session.results.length}.`);
-    }
-
-    const selected = session.results[num - 1];
-    const gameUrl = encodeURIComponent(selected.url);
-    const gameTitle = selected.title;
-
-    await m.react("⏳");
-    await m.reply(`📥 Downloading *${gameTitle}* ...`);
+    // ----- SUBCOMMAND: search -----
+    let query = full;
+    await m.react("🔍");
+    await client.sendPresenceUpdate('composing', m.jid);
+    await m.reply(`🔎 Searching for "${query}"...`);
 
     try {
-        const dlUrl = `${API_BASE}/dl?apiKey=${API_KEY}&url=${gameUrl}`;
-        const { data } = await axios.get(dlUrl, { timeout: 15000 });
+        let searchRes = await axios.get(`${API_BASE}/search?apiKey=${API_KEY}&url=${encodeURIComponent(query)}`, { timeout: 15000 });
+        if (!searchRes.data?.success || !searchRes.data?.result?.length) throw new Error("No results");
 
-        if (!data?.success || !data?.download_url) throw new Error("No download link");
-
-        const downloadUrl = data.download_url;
-        const apkRes = await axios.get(downloadUrl, {
-            responseType: 'arraybuffer',
-            timeout: 90000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
+        let results = searchRes.data.result.slice(0, 10);
+        let listMsg = `🎮 *MOD APK Results*\n🔍 *${query}*\n📊 *Found:* ${results.length}\n\n`;
+        results.forEach((game, i) => {
+            listMsg += `${i+1}. *${game.title}*\n   👤 ${game.developer || "Unknown"} | ⭐ ${game.rating || "N/A"}\n\n`;
         });
+        listMsg += `📌 *To download:* ${m.prefix}mod dl <number>\nExample: ${m.prefix}mod dl 1`;
 
-        const buffer = Buffer.from(apkRes.data);
-        const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-        if (buffer.length < 500000) throw new Error("File too small");
+        await client.sendMessage(m.jid, { text: listMsg }, { quoted: m });
 
-        const fileName = `${gameTitle.replace(/[^a-z0-9]/gi, '_')}.apk`;
-        const caption = `🎮 *${gameTitle}* [MOD APK]\n📦 Size: ${fileSizeMB} MB\n📥 *Ready*`;
-
-        await client.sendMessage(m.jid, {
-            document: buffer,
-            mimetype: "application/vnd.android.package-archive",
-            fileName: fileName,
-            caption: caption
-        }, { quoted: m });
+        // store results
+        global.modStore.set(m.sender, { results: results, timestamp: Date.now() });
+        setTimeout(() => global.modStore.delete(m.sender), 300000); // auto clear after 5 min
 
         await m.react("✅");
-        global.modSearchResults.delete(m.sender); // clear session
     } catch (err) {
-        console.error(err);
+        console.error("Search error:", err);
         await m.react("❌");
-        m.reply(`❌ *Download failed*\n${err.message.substring(0, 100)}`);
+        m.reply(`❌ Search failed: ${err.message.substring(0, 100)}`);
     }
 });
