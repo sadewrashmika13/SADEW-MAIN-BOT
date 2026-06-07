@@ -1,0 +1,100 @@
+const { Sparky, isPublic } = require("../lib");
+const axios = require("axios");
+const { generateWAMessageFromContent, proto } = require("@whiskeysockets/baileys");
+
+Sparky(
+  {
+    name: "ts",
+    fromMe: isPublic,
+    category: "search",
+    desc: "Search TikTok videos and display in a beautiful carousel grid.",
+  },
+  async ({ m, client, args }) => {
+    if (!args || args.trim() === "") {
+      return await client.sendMessage(
+        m.jid, 
+        { text: "❌ *Usage:* `.ts sadew` (ටයිප් කරලා සර්ච් කරන්න)" }, 
+        { quoted: m }
+      );
+    }
+
+    const searchQuery = args.trim();
+    await m.react('🔍');
+
+    try {
+      // 🌟 යාළුවාගෙන් අහලා මෙතනට TikTok Search API Endpoint එක දාන්න මචං
+      // දැනට මම Placeholder එකක් විදිහට මේ URL එක දැම්මේ
+      const apiUrl = `https://whiteshadow-x-api.onrender.com/api/search/tiktok?query=${encodeURIComponent(searchQuery)}&apitoken=VK4fry`;
+      
+      const response = await axios.get(apiUrl, { timeout: 15000 });
+      
+      if (!response || !response.data || !response.data.results) {
+        await m.react('❌');
+        return await client.sendMessage(m.jid, { text: "⚠️ වීඩියෝ කිසිවක් හමු වුණේ නැහැ මචං!" }, { quoted: m });
+      }
+
+      // API එකෙන් එන වීඩියෝ ලිස්ට් එක (උදාහරණයකට උපරිම වීඩියෝ 6ක් ගන්නවා)
+      const videoList = response.data.results.slice(0, 6); 
+      let carouselCards = [];
+
+      // හැම වීඩියෝ එකකටම Carousel Card එකක් ගානේ හදනවා
+      for (let video of videoList) {
+        carouselCards.push({
+          header: proto.Message.InteractiveMessage.Header.fromObject({
+            title: video.title || "TikTok Video",
+            hasMediaAttachment: true,
+            // වීඩියෝ එකේ Preview Thumbnail එක මෙතනට සෙට් කරනවා
+            imageMessage: await client.prepareWAMessageMedia({ image: { url: video.thumbnail || video.cover } }, { upload: client.waUploadToServer })
+          }),
+          body: proto.Message.InteractiveMessage.Body.fromObject({
+            text: `${video.caption || '#tiktok #viral'}`
+          }),
+          footer: proto.Message.InteractiveMessage.Footer.fromObject({
+            text: "WHITESHADOW LITE BOT"
+          }),
+          // කාඩ් එක යටින් වැටෙන බටන් එක (වීඩියෝ එක ඩවුන්ලෝඩ් කරන්න හෝ බලන්න)
+          buttons: [
+            {
+              name: "quick_reply",
+              buttonParamsJson: JSON.stringify({
+                display_text: "📥 Download Video",
+                id: `.tiktok ${video.url}` // උඹේ බොට්ගේ ටික්ටොක් ඩවුන්ලෝඩර් කමාන්ඩ් එක මෙතනට දාපන්
+              })
+            }
+          ]
+        });
+      }
+
+      // සම්පූර්ණ වට්ස්ඇප් මැසේජ් එක එකතු කරලා එක පාර යැවීම
+      const carouselMessage = generateWAMessageFromContent(m.jid, {
+        viewOnceMessage: {
+          message: {
+            interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+              body: proto.Message.InteractiveMessage.Body.fromObject({
+                text: `🔍 *TikTok Search:* ${searchQuery}`
+              }),
+              footer: proto.Message.InteractiveMessage.Footer.fromObject({
+                text: "│ ᴘᴏᴡᴇʀᴅ ʙʏ ᴡcontentʜɪᴛᴇsʜᴀᴏᴡ-ᴍᴅ"
+              }),
+              header: proto.Message.InteractiveMessage.Header.fromObject({
+                title: "ＬＯＡＤＩＮＧ．．． ＷＨＩＴＥＳＨＡＤＯＷ",
+                hasMediaAttachment: false
+              }),
+              carouselMessage: proto.Message.CarouselMessage.fromObject({
+                cards: carouselCards
+              })
+            })
+          }
+        }
+      }, { quoted: m });
+
+      await m.react('⚡');
+      await client.relayMessage(m.jid, carouselMessage.message, { messageId: carouselMessage.key.id });
+
+    } catch (error) {
+      await m.react('❌');
+      console.error("TikTok Carousel Error:", error.message);
+      await client.sendMessage(m.jid, { text: `❌ *Error:* ${error.message}` }, { quoted: m });
+    }
+  }
+);
