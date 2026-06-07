@@ -1,138 +1,288 @@
-const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
-const { generateWAMessageFromContent, proto } = require("@whiskeysockets/baileys");
+const {
+  generateWAMessageFromContent,
+  prepareWAMessageMedia,
+  proto,
+} = require("@whiskeysockets/baileys");
+const { Sparky } = require("../lib");
 
-Sparky(
-  {
-    name: "ts",
-    fromMe: isPublic,
-    category: "search",
-    desc: "Search TikTok videos and display in a beautiful layout.",
-  },
-  async ({ m, client, args }) => {
-    if (!args || args.trim() === "") {
-      return await client.sendMessage(
-        m.jid, 
-        { text: "❌ *Usage:* `.ts sadew`" }, 
-        { quoted: m }
-      );
-    }
+const API_TOKEN = "VK4fry";
+const API_URL = "https://whiteshadow-x-api.onrender.com/api/search/tiktok";
+const MAX_RESULTS = 6;
+const OUTER_HEADER_TITLE = "ＬＯＡＤＩＮＧ．．． ＷＨＩＴＥＳＨＡＤＯＷ";
+const OUTER_FOOTER_TEXT = "│ ᴘᴏᴡᴇʀᴅ ʙʏ ᴡcontentʜɪᴛᴇsʜᴀᴏᴡ-ᴍᴅ";
+const CARD_FOOTER_TEXT = "WHITESHADOW LITE BOT";
 
-    const searchQuery = args.trim();
-    console.log(`[TikTok Search] Started for query: ${searchQuery}`);
-    await m.react('🔍');
+function getJid(m) {
+  return m.jid || m.chat || m.from || m.key?.remoteJid;
+}
 
-    try {
-      // 🌟 TikTok Search API URL
-      const apiUrl = `https://whiteshadow-x-api.onrender.com/api/search/tiktok?query=${encodeURIComponent(searchQuery)}&apitoken=VK4fry`;
-      
-      console.log(`[TikTok Search] Fetching data from API...`);
-      const response = await axios.get(apiUrl, { timeout: 15000 }).catch(e => {
-        console.log(`[TikTok Search] API Axios Error: ${e.message}`);
-        return null;
-      });
-      
-      // API එකේ දත්ත පරික්ෂාව
-      if (!response || !response.data) {
-        console.log(`[TikTok Search] No response from API server.`);
-        await m.react('❌');
-        return await client.sendMessage(m.jid, { text: "⚠️ API සර්වර් එකෙන් දත්ත ලැබුණේ නැහැ මචං!" }, { quoted: m });
-      }
+function getSearchQuery(args) {
+  if (Array.isArray(args)) return args.join(" ").trim();
+  if (typeof args === "string") return args.trim();
+  return "";
+}
 
-      console.log(`[TikTok Search] API Response Data:`, JSON.stringify(response.data).substring(0, 500));
+function truncateText(value, maxLength) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
 
-      // API එකෙන් එන Array එක අල්ලගන්න එක (results හෝ data හෝ ලිස්ට් එකක් කෙලින්ම එනවා නම්)
-      const videoList = response.data.results || response.data.data || (Array.isArray(response.data) ? response.data : null);
+function pickResultsArray(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.results)) return payload.data.results;
+  if (Array.isArray(payload?.result)) return payload.result;
+  return [];
+}
 
-      if (!videoList || videoList.length === 0) {
-        console.log(`[TikTok Search] Video list is empty.`);
-        await m.react('❌');
-        return await client.sendMessage(m.jid, { text: "⚠️ වීඩියෝ කිසිවක් හමු වුණේ නැහැ මචං!" }, { quoted: m });
-      }
+function pickFirstString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
 
-      const topVideos = videoList.slice(0, 6);
-      
-      // 📝 ක්‍රමවේදය 1: සාමාන්‍ය පිරිසිදු ටෙක්ස්ට් ලිස්ට් එකක් (Fallback Text)
-      let listText = `🤖 *TIKTOK SEARCH RESULTS*\n\n🔍 *Query:* ${searchQuery}\n\n`;
-      topVideos.forEach((video, index) => {
-        const title = video.title || video.caption || `TikTok Video ${index + 1}`;
-        const url = video.url || video.link || "No Link";
-        listText += `${index + 1}. 📌 *${title}*\n🔗 ${url}\n\n`;
-      });
-      listText += `*POWERED BY SADEW-MD*`;
+function createProto(type, value) {
+  if (type?.create) return type.create(value);
+  if (type?.fromObject) return type.fromObject(value);
+  return value;
+}
 
-      // 🎡 ක්‍රමවේදය 2: Carousel මැසේජ් එකක් බිල්ඩ් කිරීම
-      console.log(`[TikTok Search] Building Carousel cards...`);
-      let carouselCards = [];
-      
-      for (let video of topVideos) {
-        const imgUrl = video.thumbnail || video.cover || video.dynamic_cover;
-        if (!imgUrl) continue;
+function normalizeVideo(rawVideo, index) {
+  const title = pickFirstString(
+    rawVideo.title,
+    rawVideo.caption,
+    rawVideo.desc,
+    rawVideo.description,
+    rawVideo.text,
+    `TikTok Result ${index + 1}`
+  );
+  const body = pickFirstString(
+    rawVideo.caption,
+    rawVideo.desc,
+    rawVideo.description,
+    rawVideo.hashtags,
+    rawVideo.title,
+    "TikTok video result"
+  );
+  const thumbnail = pickFirstString(
+    rawVideo.thumbnail,
+    rawVideo.cover,
+    rawVideo.dynamic_cover,
+    rawVideo.origin_cover,
+    rawVideo.image,
+    rawVideo.thumb
+  );
+  const url = pickFirstString(
+    rawVideo.url,
+    rawVideo.link,
+    rawVideo.share_url,
+    rawVideo.video_url,
+    rawVideo.play,
+    rawVideo.play_url
+  );
 
-        try {
-          const mediaMsg = await client.prepareWAMessageMedia(
-            { image: { url: imgUrl } }, 
-            { upload: client.waUploadToServer }
-          );
+  return {
+    title,
+    body,
+    thumbnail,
+    url,
+  };
+}
 
-          carouselCards.push({
-            header: proto.Message.InteractiveMessage.Header.fromObject({
-              title: (video.title || "TikTok Video").substring(0, 30),
-              hasMediaAttachment: true,
-              imageMessage: mediaMsg.imageMessage
-            }),
-            body: proto.Message.InteractiveMessage.Body.fromObject({
-              text: (video.caption || video.title || '#tiktok').substring(0, 60)
-            }),
-            footer: proto.Message.InteractiveMessage.Footer.fromObject({
-              text: "WHITESHADOW BOT"
-            }),
+async function safeReact(m, emoji) {
+  try {
+    await m.react?.(emoji);
+  } catch (error) {
+    console.error("ts command react error:", error);
+  }
+}
+
+async function sendText(m, client, text) {
+  const jid = getJid(m);
+
+  if (typeof m.reply === "function") return m.reply(text);
+  if (typeof m.sendMsg === "function") return m.sendMsg(jid, text, { quoted: m });
+  if (typeof client?.sendMessage === "function") {
+    return client.sendMessage(jid, { text }, { quoted: m });
+  }
+
+  throw new Error("No supported text send method found");
+}
+
+async function fetchTikTokResults(searchQuery) {
+  const endpoint = `${API_URL}?query=${encodeURIComponent(
+    searchQuery
+  )}&apitoken=${API_TOKEN}`;
+  const { data } = await axios.get(endpoint, { timeout: 15000 });
+
+  const results = pickResultsArray(data)
+    .map(normalizeVideo)
+    .filter((video) => video.url)
+    .slice(0, MAX_RESULTS);
+
+  if (!results.length) throw new Error("No TikTok results found");
+  return results;
+}
+
+async function prepareImageHeader(client, thumbnailUrl) {
+  if (!thumbnailUrl) throw new Error("Missing thumbnail URL");
+
+  const mediaContent = {
+    image: {
+      url: thumbnailUrl,
+    },
+  };
+  const options = {
+    upload: client.waUploadToServer,
+  };
+
+  if (typeof client.prepareWAMessageMedia === "function") {
+    return client.prepareWAMessageMedia(mediaContent, options);
+  }
+
+  return prepareWAMessageMedia(mediaContent, options);
+}
+
+async function buildCarouselCards(client, videos) {
+  const cards = [];
+
+  for (const video of videos) {
+    const media = await prepareImageHeader(client, video.thumbnail);
+
+    cards.push(
+      createProto(proto.Message.InteractiveMessage.Card, {
+        header: createProto(proto.Message.InteractiveMessage.Header, {
+          title: truncateText(video.title, 30),
+          hasMediaAttachment: true,
+          imageMessage: media.imageMessage,
+        }),
+        body: createProto(proto.Message.InteractiveMessage.Body, {
+          text: truncateText(video.body, 60),
+        }),
+        footer: createProto(proto.Message.InteractiveMessage.Footer, {
+          text: CARD_FOOTER_TEXT,
+        }),
+        nativeFlowMessage: createProto(
+          proto.Message.InteractiveMessage.NativeFlowMessage,
+          {
             buttons: [
               {
                 name: "quick_reply",
                 buttonParamsJson: JSON.stringify({
-                  display_text: "📥 Get Video",
-                  id: `.tiktok ${video.url || video.link}`
-                })
-              }
-            ]
-          });
-        } catch (mediaError) {
-          console.log(`[TikTok Search] Card media prep skipped for a video: ${mediaError.message}`);
-        }
-      }
-
-      // කැරොසල් කාඩ්ස් හැදිලා තියෙනවා නම් විතරක් Carousel එක යවනවා
-      if (carouselCards.length > 0) {
-        console.log(`[TikTok Search] Attempting to send Carousel Message...`);
-        
-        const carouselMessage = generateWAMessageFromContent(m.jid, {
-          viewOnceMessage: {
-            message: {
-              interactiveMessage: proto.Message.InteractiveMessage.fromObject({
-                body: proto.Message.InteractiveMessage.Body.fromObject({ text: `🔍 *TikTok Search:* ${searchQuery}` }),
-                footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: "│ ᴘᴏᴡᴇʀᴇᴅ ʙʏ sᴀᴅᴇᴡ-ᴍᴅ" }),
-                header: proto.Message.InteractiveMessage.Header.fromObject({ title: "ＬＯＡＤＩＮＧ．．．", hasMediaAttachment: false }),
-                carouselMessage: proto.Message.CarouselMessage.fromObject({ cards: carouselCards })
-              })
-            }
+                  display_text: "📥 Download Video",
+                  id: `.tiktok ${video.url}`,
+                }),
+              },
+            ],
           }
-        }, { quoted: m });
+        ),
+      })
+    );
+  }
 
-        await m.react('⚡');
-        await client.relayMessage(m.jid, carouselMessage.message, { messageId: carouselMessage.key.id });
-        console.log(`[TikTok Search] Carousel Sent Successfully!`);
-      } else {
-        // කැරොසල් එක ෆේල් වුණොත් ඔටෝම ටෙක්ස්ට් එක යනවා මචං
-        console.log(`[TikTok Search] Carousel building failed. Sending Text List instead...`);
-        await m.react('💬');
-        await client.sendMessage(m.jid, { text: listText }, { quoted: m });
+  return cards;
+}
+
+async function sendCarousel(m, client, searchQuery, videos) {
+  const jid = getJid(m);
+  const cards = await buildCarouselCards(client, videos);
+
+  const interactiveMessage = createProto(proto.Message.InteractiveMessage, {
+    header: createProto(proto.Message.InteractiveMessage.Header, {
+      title: OUTER_HEADER_TITLE,
+      hasMediaAttachment: false,
+    }),
+    body: createProto(proto.Message.InteractiveMessage.Body, {
+      text: `TikTok search results for: ${searchQuery}`,
+    }),
+    footer: createProto(proto.Message.InteractiveMessage.Footer, {
+      text: OUTER_FOOTER_TEXT,
+    }),
+    carouselMessage: createProto(proto.Message.InteractiveMessage.CarouselMessage, {
+      cards,
+      messageVersion: 1,
+    }),
+  });
+
+  const message = generateWAMessageFromContent(
+    jid,
+    {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: {
+            deviceListMetadata: {},
+            deviceListMetadataVersion: 2,
+          },
+          interactiveMessage,
+        },
+      },
+    },
+    {
+      quoted: m,
+    }
+  );
+
+  await client.relayMessage(jid, message.message, {
+    messageId: message.key.id,
+  });
+}
+
+async function sendFallbackList(m, client, searchQuery, videos) {
+  const lines = [
+    `TikTok search results for: ${searchQuery}`,
+    "",
+    ...videos.map((video, index) => {
+      const title = truncateText(video.title || `TikTok Result ${index + 1}`, 80);
+      return `${index + 1}. ${title}\n${video.url}`;
+    }),
+  ];
+
+  return sendText(m, client, lines.join("\n\n"));
+}
+
+Sparky(
+  {
+    name: "ts",
+    fromMe: false,
+    category: "search",
+    desc: "Search TikTok videos and display in a beautiful carousel grid.",
+    description: "Search TikTok videos and display in a beautiful carousel grid.",
+  },
+  async ({ m, client, args }) => {
+    const searchQuery = getSearchQuery(args);
+
+    if (!searchQuery) {
+      return sendText(m, client, "❌ *Usage:* `.ts sadew`");
+    }
+
+    try {
+      await safeReact(m, "🔍");
+
+      const videos = await fetchTikTokResults(searchQuery);
+
+      try {
+        await sendCarousel(m, client, searchQuery, videos);
+      } catch (carouselError) {
+        console.error("ts command carousel build/send error:", carouselError);
+        await sendFallbackList(m, client, searchQuery, videos);
       }
 
+      await safeReact(m, "⚡");
     } catch (error) {
-      await m.react('❌');
-      console.error("[TikTok Search] Main Catch Error:", error);
-      await client.sendMessage(m.jid, { text: `❌ *Error:* ${error.message}` }, { quoted: m });
+      console.error("ts command error:", error);
+      await safeReact(m, "❌");
+
+      return sendText(
+        m,
+        client,
+        `❌ TikTok search failed.\nReason: ${
+          error?.response?.data?.message || error.message || "Unknown error"
+        }`
+      );
     }
   }
 );
