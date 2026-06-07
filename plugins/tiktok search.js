@@ -6,8 +6,10 @@ const {
 } = require("@whiskeysockets/baileys");
 const { Sparky } = require("../lib");
 
+// 🌐 ⚠️ යාළුවාගෙන් හරිම URL එක ඉල්ලගෙන මෙතනට දාපන් මචං. දැනට 404 එන්නේ මේක වැරදි හින්දා!
 const API_TOKEN = "VK4fry";
-const API_URL = "https://whiteshadow-x-api.onrender.com/api/search/tiktok";
+const API_URL = "https://whiteshadow-x-api.onrender.com/api/search/tiktok"; 
+
 const MAX_RESULTS = 6;
 const OUTER_HEADER_TITLE = "ＬＯＡＤＩＮＧ．．． ＷＨＩＴＥＳＨＡＤＯＷ";
 const OUTER_FOOTER_TEXT = "│ ᴘᴏᴡᴇʀᴅ ʙʏ ᴡcontentʜɪᴛᴇsʜᴀᴏᴡ-ᴍᴅ";
@@ -154,7 +156,8 @@ async function buildCarouselCards(client, videos) {
     const media = await prepareImageHeader(client, video.thumbnail);
 
     cards.push(
-      createProto(proto.Message.InteractiveMessage.Card, {
+      // ✅ FIX: Changed from proto.Message.InteractiveMessage.Card to proto.Message.CarouselMessage.Card
+      createProto(proto.Message.CarouselMessage.Card, {
         header: createProto(proto.Message.InteractiveMessage.Header, {
           title: truncateText(video.title, 30),
           hasMediaAttachment: true,
@@ -202,7 +205,8 @@ async function sendCarousel(m, client, searchQuery, videos) {
     footer: createProto(proto.Message.InteractiveMessage.Footer, {
       text: OUTER_FOOTER_TEXT,
     }),
-    carouselMessage: createProto(proto.Message.InteractiveMessage.CarouselMessage, {
+    // ✅ FIX: Changed from proto.Message.InteractiveMessage.CarouselMessage to proto.Message.CarouselMessage
+    carouselMessage: createProto(proto.Message.CarouselMessage, {
       cards,
       messageVersion: 1,
     }),
