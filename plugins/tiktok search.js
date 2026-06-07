@@ -6,8 +6,12 @@ const {
 } = require("@whiskeysockets/baileys");
 const { Sparky } = require("../lib");
 
-// 🌐 කාගෙන්වත් හිඟාකන්න ඕන නැති පොදු නිදහස් API එකක් අපි දැම්මා!
-const API_URL = "https://itzpire.com/search/tiktok"; 
+// 🔄 වැඩ කරන සුපිරි බැකප් API ලින්ක්ස්
+const API_ENDPOINTS = [
+  "https://api.maher-zubair.tech/search/tiktok",
+  "https://api.agatz.xyz/api/tiktok",
+  "https://itzpire.com/search/tiktok"
+];
 
 const MAX_RESULTS = 6;
 const OUTER_HEADER_TITLE = "ＬＯＡＤＩＮＧ．．． ＳＡＤＥＷ  ＭＤ";
@@ -18,226 +22,105 @@ function getJid(m) {
   return m.jid || m.chat || m.from || m.key?.remoteJid;
 }
 
-function getSearchQuery(args) {
-  if (Array.isArray(args)) return args.join(" ").trim();
-  if (typeof args === "string") return args.trim();
-  return "";
-}
-
 function truncateText(value, maxLength) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 1)}…`;
 }
 
-function pickResultsArray(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.results)) return payload.results;
-  if (Array.isArray(payload?.data?.data)) return payload.data.data;
-  if (Array.isArray(payload?.result)) return payload.result;
-  return [];
-}
-
-function pickFirstString(...values) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
+async function sendText(m, client, text) {
+  try {
+    const jid = getJid(m);
+    if (client && typeof client.sendMessage === "function") {
+      return await client.sendMessage(jid, { text }, { quoted: m });
+    }
+    if (typeof m.reply === "function") return await m.reply(text);
+  } catch (e) {
+    console.error("Critical: sendText failed:", e.message);
   }
-  return "";
-}
-
-function createProto(type, value) {
-  if (type?.create) return type.create(value);
-  if (type?.fromObject) return type.fromObject(value);
-  return value;
-}
-
-function normalizeVideo(rawVideo, index) {
-  const title = pickFirstString(
-    rawVideo.title,
-    rawVideo.caption,
-    rawVideo.desc,
-    `TikTok Result ${index + 1}`
-  );
-  const body = pickFirstString(
-    rawVideo.author?.nickname,
-    rawVideo.author,
-    "TikTok video result"
-  );
-  const thumbnail = pickFirstString(
-    rawVideo.cover,
-    rawVideo.thumbnail,
-    rawVideo.dynamic_cover
-  );
-  const url = pickFirstString(
-    rawVideo.video,
-    rawVideo.url,
-    rawVideo.link,
-    rawVideo.nowm
-  );
-
-  return {
-    title,
-    body,
-    thumbnail,
-    url,
-  };
 }
 
 async function safeReact(m, emoji) {
   try {
     await m.react?.(emoji);
-  } catch (error) {
-    console.error("ts command react error:", error);
-  }
-}
-
-async function sendText(m, client, text) {
-  const jid = getJid(m);
-
-  if (typeof m.reply === "function") return m.reply(text);
-  if (typeof m.sendMsg === "function") return m.sendMsg(jid, text, { quoted: m });
-  if (typeof client?.sendMessage === "function") {
-    return client.sendMessage(jid, { text }, { quoted: m });
-  }
-
-  throw new Error("No supported text send method found");
+  } catch (e) {}
 }
 
 async function fetchTikTokResults(searchQuery) {
-  // ටෝකන් නැතිව කෙලින්ම සර්ච් කරන ලින්ක් එක
-  const endpoint = `${API_URL}?query=${encodeURIComponent(searchQuery)}`;
-  const { data } = await axios.get(endpoint, { timeout: 15000 });
+  let lastError = null;
 
-  const results = pickResultsArray(data)
-    .map(normalizeVideo)
-    .filter((video) => video.url && video.thumbnail)
-    .slice(0, MAX_RESULTS);
+  for (const baseUrl of API_ENDPOINTS) {
+    try {
+      console.log(`Trying TikTok API: ${baseUrl}`);
+      const endpoint = `${baseUrl}?query=${encodeURIComponent(searchQuery)}&q=${encodeURIComponent(searchQuery)}`;
+      
+      const { data } = await axios.get(endpoint, { timeout: 10000 });
+      const rawResults = data?.result || data?.data || data?.results || [];
+      const items = Array.isArray(rawResults) ? rawResults : (rawResults.data || []);
 
-  if (!results.length) throw new Error("No TikTok results found");
-  return results;
-}
-
-async function prepareImageHeader(client, thumbnailUrl) {
-  if (!thumbnailUrl) throw new Error("Missing thumbnail URL");
-
-  const mediaContent = {
-    image: {
-      url: thumbnailUrl,
-    },
-  };
-  const options = {
-    upload: client.waUploadToServer,
-  };
-
-  if (typeof client.prepareWAMessageMedia === "function") {
-    return client.prepareWAMessageMedia(mediaContent, options);
+      if (Array.isArray(items) && items.length > 0) {
+        return items
+          .map((rawVideo, index) => {
+            return {
+              title: rawVideo.title || rawVideo.caption || rawVideo.desc || `TikTok Result ${index + 1}`,
+              body: rawVideo.author?.nickname || rawVideo.author?.name || rawVideo.author || "TikTok Video",
+              thumbnail: rawVideo.cover || rawVideo.thumbnail || rawVideo.dynamic_cover,
+              url: rawVideo.video || rawVideo.url || rawVideo.link || rawVideo.nowm || rawVideo.play,
+            };
+          })
+          .filter((v) => v.url) // වීඩියෝ URL එක අනිවාර්යයෙන් තියෙන්න ඕනේ
+          .slice(0, MAX_RESULTS);
+      }
+    } catch (e) {
+      console.warn(`API ${baseUrl} failed: ${e.message}`);
+      lastError = e;
+    }
   }
 
-  return prepareWAMessageMedia(mediaContent, options);
+  throw new Error(lastError ? `All TikTok APIs failed. Last error: ${lastError.message}` : "No results found");
 }
 
+// 🎥 මෙන්න මෙතනදී තමයි වීඩියෝ එක ඩවුන්ලෝඩ් කරලා කාඩ් එකට ඔබන්නේ:
 async function buildCarouselCards(client, videos) {
   const cards = [];
-
   for (const video of videos) {
     try {
-      const media = await prepareImageHeader(client, video.thumbnail);
+      // 🚨 ඉමේජ් වෙනුවට කෙලින්ම වීඩියෝ ලින්ක් එක වට්ස්ඇප් එකට සකස් කරනවා
+      const mediaContent = { video: { url: video.url } };
+      const media = await client.prepareWAMessageMedia(mediaContent, {
+        upload: client.waUploadToServer,
+      });
 
-      cards.push(
-        createProto(proto.Message.CarouselMessage.Card, {
-          header: createProto(proto.Message.InteractiveMessage.Header, {
-            title: truncateText(video.title, 30),
-            hasMediaAttachment: true,
-            imageMessage: media.imageMessage,
-          }),
-          body: createProto(proto.Message.InteractiveMessage.Body, {
-            text: truncateText(video.body, 60),
-          }),
-          footer: createProto(proto.Message.InteractiveMessage.Footer, {
-            text: CARD_FOOTER_TEXT,
-          }),
-          nativeFlowMessage: createProto(
-            proto.Message.InteractiveMessage.NativeFlowMessage,
+      const card = proto.Message.CarouselMessage.Card.fromObject({
+        header: proto.Message.InteractiveMessage.Header.fromObject({
+          title: truncateText(video.title, 30),
+          hasMediaAttachment: true,
+          videoMessage: media.videoMessage, // 👈 මෙතනට වීඩියෝ මැසේජ් එක දැම්මා
+        }),
+        body: proto.Message.InteractiveMessage.Body.fromObject({
+          text: truncateText(video.body, 60),
+        }),
+        footer: proto.Message.InteractiveMessage.Footer.fromObject({
+          text: CARD_FOOTER_TEXT,
+        }),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+          buttons: [
             {
-              buttons: [
-                {
-                  name: "quick_reply",
-                  buttonParamsJson: JSON.stringify({
-                    display_text: "📥 Download Video",
-                    id: `.tiktok ${video.url}`,
-                  }),
-                },
-              ],
-            }
-          ),
-        })
-      );
+              name: "quick_reply",
+              buttonParamsJson: JSON.stringify({
+                display_text: "🎥 Play / Info",
+                id: `.tiktok ${video.url}`,
+              }),
+            },
+          ],
+        }),
+      });
+      cards.push(card);
     } catch (e) {
-      console.error("Error building card for video:", video.title, e.message);
+      console.error("Error creating video card for:", video.title, e.message);
     }
   }
-
   return cards;
-}
-
-async function sendCarousel(m, client, searchQuery, videos) {
-  const jid = getJid(m);
-  const cards = await buildCarouselCards(client, videos);
-
-  if (!cards.length) throw new Error("Could not build any carousel cards");
-
-  const interactiveMessage = createProto(proto.Message.InteractiveMessage, {
-    header: createProto(proto.Message.InteractiveMessage.Header, {
-      title: OUTER_HEADER_TITLE,
-      hasMediaAttachment: false,
-    }),
-    body: createProto(proto.Message.InteractiveMessage.Body, {
-      text: `TikTok search results for: ${searchQuery}`,
-    }),
-    footer: createProto(proto.Message.InteractiveMessage.Footer, {
-      text: OUTER_FOOTER_TEXT,
-    }),
-    carouselMessage: createProto(proto.Message.CarouselMessage, {
-      cards,
-      messageVersion: 1,
-    }),
-  });
-
-  const message = generateWAMessageFromContent(
-    jid,
-    {
-      viewOnceMessage: {
-        message: {
-          messageContextInfo: {
-            deviceListMetadata: {},
-            deviceListMetadataVersion: 2,
-          },
-          interactiveMessage,
-        },
-      },
-    },
-    {
-      quoted: m,
-    }
-  );
-
-  await client.relayMessage(jid, message.message, {
-    messageId: message.key.id,
-  });
-}
-
-async function sendFallbackList(m, client, searchQuery, videos) {
-  const lines = [
-    `TikTok search results for: ${searchQuery}`,
-    "",
-    ...videos.map((video, index) => {
-      const title = truncateText(video.title || `TikTok Result ${index + 1}`, 80);
-      return `${index + 1}. ${title}\n${video.url}`;
-    }),
-  ];
-
-  return sendText(m, client, lines.join("\n\n"));
 }
 
 Sparky(
@@ -245,39 +128,69 @@ Sparky(
     name: "ts",
     fromMe: false,
     category: "search",
-    desc: "Search TikTok videos independently without gatekeeping APIs.",
-    description: "Search TikTok videos independently without gatekeeping APIs.",
+    desc: "Search TikTok and stream videos horizontally.",
   },
   async ({ m, client, args }) => {
-    const searchQuery = getSearchQuery(args);
+    const searchQuery = args && Array.isArray(args) ? args.join(" ").trim() : String(args || "").trim();
 
     if (!searchQuery) {
-      return sendText(m, client, "❌ *Usage:* `.ts sadew`");
+      return await sendText(m, client, "❌ *Usage:* `.ts sadew`");
     }
 
     try {
-      await safeReact(m, "🔍");
+      await safeReact(m, "📥"); // වීඩියෝ ඩවුන්ලෝඩ් වෙන හින්දා 📥 ඉමෝජි එක දැම්මා
 
       const videos = await fetchTikTokResults(searchQuery);
+      const jid = getJid(m);
+      
+      // වීඩියෝ 6ක්ම එකපාර බේලීස් වලින් ප්‍රොසෙස් වෙන්න තත්පර කිහිපයක් යනවා
+      const cards = await buildCarouselCards(client, videos);
 
-      try {
-        await sendCarousel(m, client, searchQuery, videos);
-      } catch (carouselError) {
-        console.error("ts command carousel build/send error, running fallback:", carouselError.message);
-        await sendFallbackList(m, client, searchQuery, videos);
-      }
+      if (!cards.length) throw new Error("Could not download or process any videos for carousel");
 
+      const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
+        header: proto.Message.InteractiveMessage.Header.fromObject({
+          title: OUTER_HEADER_TITLE,
+          hasMediaAttachment: false,
+        }),
+        body: proto.Message.InteractiveMessage.Body.fromObject({
+          text: `TikTok video results for: ${searchQuery}`,
+        }),
+        footer: proto.Message.InteractiveMessage.Footer.fromObject({
+          text: OUTER_FOOTER_TEXT,
+        }),
+        carouselMessage: proto.Message.CarouselMessage.fromObject({
+          cards,
+          messageVersion: 1,
+        }),
+      });
+
+      const message = generateWAMessageFromContent(
+        jid,
+        {
+          viewOnceMessage: {
+            message: {
+              messageContextInfo: {
+                deviceListMetadata: {},
+                deviceListMetadataVersion: 2,
+              },
+              interactiveMessage,
+            },
+          },
+        },
+        { quoted: m }
+      );
+
+      await client.relayMessage(jid, message.message, { messageId: message.key.id });
       await safeReact(m, "⚡");
-    } catch (error) {
-      console.error("ts command error:", error);
-      await safeReact(m, "❌");
 
-      return sendText(
+    } catch (error) {
+      console.error("Main TS Command Error:", error.message);
+      await safeReact(m, "❌");
+      return await sendText(
         m,
         client,
-        `❌ TikTok search failed.\nReason: ${
-          error?.response?.data?.message || error.message || "Unknown error"
-        }`
+        `❌ TikTok search failed.\nReason: ${error.message || "Unknown Error"}`
       );
     }
   }
