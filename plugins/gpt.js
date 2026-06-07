@@ -21,27 +21,41 @@ Sparky(
     await m.react('🧠');
 
     try {
-      // 🔥 AI එකට උඹ ඉල්ලපු විදිහටම Sinhala & English mix කරලා කතා කරන්න බල කරන හොර රහස් Instruction එක
+      // AI එකට Sinhala & English mix කරලා කතා කරන්න බල කරන Instruction එක
       const systemPrompt = "Instruction: Act as a friendly WhatsApp bot. Respond in a casual, natural mix of Sinhala and English (using Sinhala script, but blending in standard English technical/common words naturally where necessary), exactly how friends text each other. Keep it engaging and smart. User Question: ";
-      
       const finalQuery = systemPrompt + queryText;
 
-      // API Request එක සිද්ධ වෙනවා
       const response = await axios.get("https://whiteshadow-x-api.onrender.com/api/ai/chatgpt", {
         params: {
           q: finalQuery,
           apitoken: "VK4fry"
         },
-        timeout: 15000 // Timeout එක තත්පර 15ක් දුන්නා
+        timeout: 15000
       });
 
-      const replyAnswer = response.data.result || response.data.response || response.data.reply || response.data;
+      // 🔥 [object Object] එන එක නවත්තන්න සුපිරිම Parsing පාරක් මෙතන තියෙන්නේ මචං
+      let replyAnswer = "";
+      const resData = response.data;
+
+      if (typeof resData === "string") {
+        replyAnswer = resData;
+      } else if (resData && typeof resData === "object") {
+        // API එකෙන් එන්න පුළුවන් හැම ප්‍රධාන Key එකක්ම auto-check කරනවා
+        const rawData = resData.result || resData.response || resData.reply || resData.data || resData.message;
+        
+        if (typeof rawData === "object" && rawData !== null) {
+          replyAnswer = rawData.reply || rawData.text || rawData.message || rawData.result || JSON.stringify(rawData);
+        } else {
+          replyAnswer = rawData || JSON.stringify(resData);
+        }
+      } else {
+        replyAnswer = JSON.stringify(resData);
+      }
 
       if (!replyAnswer) throw new Error("API එකෙන් නිසි ප්‍රතිචාරයක් ලැබුණේ නැත.");
 
       await m.react('💬');
       
-      // ✅ උඹ ඉල්ලපු විදිහටම වෙනස් කරපු ලස්සන Caption format එක
       const captionText = `🤖 *AI ANSWER (GPT-4o MINI)*\n\n${replyAnswer}\n\n*POWERED BY SADEW-MD*`;
       
       await client.sendMessage(m.jid, { text: captionText }, { quoted: m });
