@@ -1,8 +1,7 @@
 const axios = require("axios");
 const {
   generateWAMessageFromContent,
-  prepareWAMessageMedia, // 👈 මේක Baileys එකෙන් කෙලින්ම එන එකක්
-  proto,
+  prepareWAMessageMedia,
 } = require("@whiskeysockets/baileys");
 const { Sparky } = require("../lib");
 
@@ -79,6 +78,7 @@ async function fetchTikWMSearchResults(searchQuery) {
   }
 }
 
+// ✨ Object-Based ක්‍රමයට කාඩ්ස් සාදන කොටස (ක්‍රෑෂ් වෙන්නේ නැති Bulletproof ක්‍රමය)
 async function buildCarouselCards(client, videos) {
   const cards = [];
   
@@ -99,7 +99,6 @@ async function buildCarouselCards(client, videos) {
       let headerConfig;
 
       if (videoRes && videoRes.data) {
-        // ✨ මෙතනින් 'client.' කෑල්ල අයින් කරලා හරියටම හැදුවා මචං
         media = await prepareWAMessageMedia(
           { video: videoRes.data },
           { upload: client.waUploadToServer }
@@ -111,7 +110,6 @@ async function buildCarouselCards(client, videos) {
         };
       } else {
         console.log(`Video buffer failed, falling back to thumbnail for: ${video.title}`);
-        // ✨ මෙතනත් 'client.' කෑල්ල අයින් කලා
         media = await prepareWAMessageMedia(
           { image: { url: video.thumbnail } },
           { upload: client.waUploadToServer }
@@ -123,15 +121,16 @@ async function buildCarouselCards(client, videos) {
         };
       }
 
-      const card = proto.Message.CarouselMessage.Card.fromObject({
-        header: proto.Message.InteractiveMessage.Header.fromObject(headerConfig),
-        body: proto.Message.InteractiveMessage.Body.fromObject({
+      // 🛠️ proto කෑලි අයින් කරලා කෙලින්ම පිරිසිදු Object එකක් හැදුවා
+      const card = {
+        header: headerConfig,
+        body: {
           text: truncateText(video.body, 60),
-        }),
-        footer: proto.Message.InteractiveMessage.Footer.fromObject({
+        },
+        footer: {
           text: CARD_FOOTER_TEXT,
-        }),
-        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+        },
+        nativeFlowMessage: {
           buttons: [
             {
               name: "quick_reply",
@@ -141,8 +140,8 @@ async function buildCarouselCards(client, videos) {
               }),
             },
           ],
-        }),
-      });
+        },
+      };
       cards.push(card);
     } catch (e) {
       console.error("Error creating card for:", video.title, e.message);
@@ -175,22 +174,23 @@ Sparky(
 
       if (!cards.length) throw new Error("Could not process any video or image cards");
 
-      const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
-        header: proto.Message.InteractiveMessage.Header.fromObject({
+      // 🛠️ මුළු මැසේජ් එකම සාමාන්‍ය JS Object එකක් විදිහට සකස් කලා මචං
+      const interactiveMessage = {
+        header: {
           title: OUTER_HEADER_TITLE,
           hasMediaAttachment: false,
-        }),
-        body: proto.Message.InteractiveMessage.Body.fromObject({
+        },
+        body: {
           text: `TikTok video results for: ${searchQuery}`,
-        }),
-        footer: proto.Message.InteractiveMessage.Footer.fromObject({
+        },
+        footer: {
           text: OUTER_FOOTER_TEXT,
-        }),
-        carouselMessage: proto.Message.CarouselMessage.fromObject({
-          cards,
+        },
+        carouselMessage: {
+          cards: cards,
           messageVersion: 1,
-        }),
-      });
+        },
+      };
 
       const message = generateWAMessageFromContent(
         jid,
