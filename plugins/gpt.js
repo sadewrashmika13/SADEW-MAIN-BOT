@@ -33,26 +33,31 @@ Sparky(
         timeout: 15000
       });
 
-      // 🔥 [object Object] එන එක නවත්තන්න සුපිරිම Parsing පාරක් මෙතන තියෙන්නේ මචං
+      let resData = response.data;
       let replyAnswer = "";
-      const resData = response.data;
 
+      // 🌟 මෙතනින් තමයි රෝ දත්ත ටික JSON එකක් විදිහට Parse කරලා ලෙඩේ වළක්වන්නේ මචං
       if (typeof resData === "string") {
-        replyAnswer = resData;
-      } else if (resData && typeof resData === "object") {
-        // API එකෙන් එන්න පුළුවන් හැම ප්‍රධාන Key එකක්ම auto-check කරනවා
-        const rawData = resData.result || resData.response || resData.reply || resData.data || resData.message;
-        
-        if (typeof rawData === "object" && rawData !== null) {
-          replyAnswer = rawData.reply || rawData.text || rawData.message || rawData.result || JSON.stringify(rawData);
-        } else {
-          replyAnswer = rawData || JSON.stringify(resData);
+        try {
+          resData = JSON.parse(resData);
+        } catch (e) {
+          // JSON නෙවෙයි නම් ආපු Text එක ඒ විදිහටම ගන්නවා
+          replyAnswer = resData; 
         }
-      } else {
-        replyAnswer = JSON.stringify(resData);
       }
 
-      if (!replyAnswer) throw new Error("API එකෙන් නිසි ප්‍රතිචාරයක් ලැබුණේ නැත.");
+      if (resData && typeof resData === "object") {
+        // API එකෙන් ආපු JSON එකෙන් "response" කියන කෑල්ල විතරක් වෙන් කරලා ගන්නවා
+        replyAnswer = resData.response || resData.result || resData.reply || resData.data;
+        
+        if (typeof replyAnswer === "object" && replyAnswer !== null) {
+          replyAnswer = replyAnswer.text || JSON.stringify(replyAnswer);
+        }
+      }
+
+      if (!replyAnswer) {
+        replyAnswer = typeof resData === "object" ? JSON.stringify(resData) : resData;
+      }
 
       await m.react('💬');
       
