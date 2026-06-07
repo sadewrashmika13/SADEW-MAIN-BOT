@@ -6,7 +6,7 @@ const {
 } = require("@whiskeysockets/baileys");
 const { Sparky } = require("../lib");
 
-const MAX_RESULTS = 6;
+const MAX_RESULTS = 4; // සර්වර් එකේ ස්පීඩ් එක රැකගන්න 4ක් කලා මචං
 const OUTER_HEADER_TITLE = "ＬＯＡＤＩＮＧ．．． ＳＡＤＥＷ  ＭＤ";
 const OUTER_FOOTER_TEXT = "│ ᴘᴏᴡᴇʀᴅ ʙʏ sᴀᴅᴇᴡ-ᴍᴅ";
 const CARD_FOOTER_TEXT = "SADEW LITE BOT";
@@ -39,12 +39,11 @@ async function safeReact(m, emoji) {
   } catch (e) {}
 }
 
-// 🔍 TikWM සර්වර් එකෙන් TikTok වීඩියෝ සර්ච් කරන කොටස
+// 🔍 TikWM සර්ච් එකෙන් ඩේටා ගන්නා කොටස
 async function fetchTikWMSearchResults(searchQuery) {
   try {
     console.log(`Searching TikTok via TikWM for: ${searchQuery}`);
     
-    // TikWM සර්ච් එකට POST රික්වෙස්ට් එකක් Form Data විදිහට යැවීම තමයි ආරක්ෂිතම ක්‍රමය
     const response = await axios.post(
       "https://tikwm.com/api/feed/search",
       new URLSearchParams({
@@ -61,14 +60,19 @@ async function fetchTikWMSearchResults(searchQuery) {
     }
 
     return videos.map((v, index) => {
+      let videoUrl = v.play || v.wmplay;
+      if (videoUrl && videoUrl.startsWith('/')) videoUrl = `https://tikwm.com${videoUrl}`;
+      
+      let thumbUrl = v.cover;
+      if (thumbUrl && thumbUrl.startsWith('/')) thumbUrl = `https://tikwm.com${thumbUrl}`;
+
       return {
         title: v.title || `TikTok Result ${index + 1}`,
         body: v.author?.nickname || `@${v.author?.unique_id}` || "TikTok Video",
-        // 'play' කියන්නේ වෝටර්මාර්ක් නැති ඩිරෙක්ට් වීඩියෝ ස්ට්‍රීම් ලින්ක් එක
-        url: v.play || `https://tikwm.com${v.play}`, 
-        thumbnail: v.cover || `https://tikwm.com${v.cover}`
+        url: videoUrl, 
+        thumbnail: thumbUrl
       };
-    });
+    }).filter(v => v.url);
 
   } catch (e) {
     console.error("TikWM Search API Error:", e.message);
@@ -76,23 +80,54 @@ async function fetchTikWMSearchResults(searchQuery) {
   }
 }
 
-// 🎥 වීඩියෝ ටික වට්ස්ඇප් සර්වර් එකට අප්ලෝඩ් කරලා හොරිසොන්ටල් කාඩ්ස් හදන කොටස
-async function buildVideoCarouselCards(client, videos) {
+// 🎥 වීඩියෝ බෆර් එකක් විදිහට බාගෙන කාඩ්ස් සාදන කොටස (Safe & Bulletproof)
+async function buildCarouselCards(client, videos) {
   const cards = [];
+  
   for (const video of videos) {
     try {
-      // කෙලින්ම TikWM වීඩියෝ ලින්ක් එක බේලීස් වලට දීලා අප්ලෝඩ් කරවනවා
-      const mediaContent = { video: { url: video.url } };
-      const media = await client.prepareWAMessageMedia(mediaContent, {
-        upload: client.waUploadToServer,
-      });
+      console.log(`Downloading video buffer for: ${video.title}`);
+      
+      // බ්‍රවුසර් එකක් විදිහට TikWM එකෙන් වීඩියෝ එක බාගන්නවා (Hotlink බ්ලොක් එක කැපේ)
+      const videoRes = await axios.get(video.url, {
+        responseType: "arraybuffer",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://tikwm.com/"
+        },
+        timeout: 12000
+      }).catch(() => null);
 
-      const card = proto.Message.CarouselMessage.Card.fromObject({
-        header: proto.Message.InteractiveMessage.Header.fromObject({
+      let media;
+      let headerConfig;
+
+      if (videoRes && videoRes.data) {
+        // වීඩියෝ එක සාර්ථකව බාගත්තා නම් කෙලින්ම වීඩියෝ මැසේජ් එකක් හදනවා
+        media = await client.prepareWAMessageMedia(
+          { video: videoRes.data },
+          { upload: client.waUploadToServer }
+        );
+        headerConfig = {
           title: truncateText(video.title, 30),
           hasMediaAttachment: true,
-          videoMessage: media.videoMessage, // 👈 වීඩියෝ එක කාඩ් එක ඇතුළටම දැම්මා
-        }),
+          videoMessage: media.videoMessage,
+        };
+      } else {
+        // මොකක් හරි හේතුවකින් වීඩියෝ එක බාන්න බැරි වුණොත්, ඉමේජ් එකක් විදිහට කාඩ් එක හදනවා (Fallback)
+        console.log(`Video buffer failed, falling back to thumbnail for: ${video.title}`);
+        media = await client.prepareWAMessageMedia(
+          { image: { url: video.thumbnail } },
+          { upload: client.waUploadToServer }
+        );
+        headerConfig = {
+          title: truncateText(video.title, 30),
+          hasMediaAttachment: true,
+          imageMessage: media.imageMessage,
+        };
+      }
+
+      const card = proto.Message.CarouselMessage.Card.fromObject({
+        header: proto.Message.InteractiveMessage.Header.fromObject(headerConfig),
         body: proto.Message.InteractiveMessage.Body.fromObject({
           text: truncateText(video.body, 60),
         }),
@@ -104,7 +139,7 @@ async function buildVideoCarouselCards(client, videos) {
             {
               name: "quick_reply",
               buttonParamsJson: JSON.stringify({
-                display_text: "🎥 High Quality Play",
+                display_text: "📥 Download Video",
                 id: `.tiktok ${video.url}`,
               }),
             },
@@ -113,7 +148,7 @@ async function buildVideoCarouselCards(client, videos) {
       });
       cards.push(card);
     } catch (e) {
-      console.error("Error creating video card for:", video.title, e.message);
+      console.error("Error creating card for:", video.title, e.message);
     }
   }
   return cards;
@@ -134,18 +169,18 @@ Sparky(
     }
 
     try {
-      await safeReact(m, "📥"); // වීඩියෝ ප්‍රොසෙස් වෙන හින්දා 📥 ඉමෝජි එක දැම්මා
+      await safeReact(m, "📥");
 
-      // 1. TikWM එකෙන් ඩේටා ඇදීම
+      // 1. TikWM සර්ච් ඩේටා ගැනීම
       const videos = await fetchTikWMSearchResults(searchQuery);
       const jid = getJid(m);
       
-      // 2. වීඩියෝ 6 වට්ස්ඇප් එකට අප්ලෝඩ් කරලා කාඩ්ස් සකස් කිරීම
-      const cards = await buildVideoCarouselCards(client, videos);
+      // 2. බෆර් ක්‍රමයට කාඩ්ස් සෑදීම
+      const cards = await buildCarouselCards(client, videos);
 
-      if (!cards.length) throw new Error("Could not download or process any videos from TikWM");
+      if (!cards.length) throw new Error("Could not process any video or image cards");
 
-      // 3. මුළු කැරොසල් මැසේජ් එකම එකතු කරලා සකස් කිරීම
+      // 3. මැසේජ් එක ව්‍යුහගත කිරීම
       const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
         header: proto.Message.InteractiveMessage.Header.fromObject({
           title: OUTER_HEADER_TITLE,
@@ -156,7 +191,7 @@ Sparky(
         }),
         footer: proto.Message.InteractiveMessage.Footer.fromObject({
           text: OUTER_FOOTER_TEXT,
-          }),
+        }),
         carouselMessage: proto.Message.CarouselMessage.fromObject({
           cards,
           messageVersion: 1,
@@ -179,7 +214,7 @@ Sparky(
         { quoted: m }
       );
 
-      // 4. මැසේජ් එක වට්ස්ඇප් එකට රිලේ කිරීම
+      // 4. යැවීම
       await client.relayMessage(jid, message.message, { messageId: message.key.id });
       await safeReact(m, "⚡");
 
