@@ -54,22 +54,32 @@ Sparky(
         }
       }
 
-      // 🌟 [object Object] ලෙඩේ 100%ක් නැති කරන සුපිරි Logic එක
+      // 🌟 FeelBetter API එකේ "answer" කෑල්ල විතරක් වෙන් කරලා ගන්නා සුපිරි Logic එක
       if (resData && typeof resData === "object") {
-        // API එකෙන් එන්න පුළුවන් හැම Key එකක්ම චෙක් කරනවා
-        let mainData = resData.response || resData.result || resData.reply || resData.data || resData.message;
+        let mainData = resData.answer || resData.response || resData.result || resData.reply || resData.data;
         
         if (mainData && typeof mainData === "object") {
-          // ප්‍රධාන කෑල්ලත් Object එකක් නම් ඒක ඇතුළේ තියෙන Text එක ගන්නවා
-          replyAnswer = mainData.text || mainData.response || mainData.result || mainData.message || JSON.stringify(mainData);
+          replyAnswer = mainData.text || mainData.answer || mainData.response || JSON.stringify(mainData);
         } else if (mainData) {
           replyAnswer = String(mainData);
         }
       }
 
-      // හැමදේම කරලත් replyAnswer එක හිස් නම් හෝ [object Object] ම ආවොත් JSON එක String එකක් කරලා ගන්නවා
+      // Regex Extraction එකත් "answer" එක අල්ලන විදිහට අප්ඩේට් කරා මචං
       if (!replyAnswer || replyAnswer === "[object Object]" || replyAnswer === "{}") {
-        replyAnswer = typeof resData === "object" ? JSON.stringify(resData) : String(resData);
+        const rawString = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
+        const match = rawString.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/) || rawString.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (match && match[1]) {
+          replyAnswer = match[1]
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, '\n')
+            .replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16)));
+        }
+      }
+
+      // අවසාන පියවර
+      if (!replyAnswer || replyAnswer === "[object Object]" || replyAnswer === "{}") {
+        replyAnswer = typeof resData === "object" ? (resData.answer || JSON.stringify(resData)) : String(resData);
       }
 
       await m.react('💬');
