@@ -21,8 +21,8 @@ Sparky(
     await m.react('🧠');
 
     try {
-      // AI එකට Sinhala & English mix කරලා කතා කරන්න බල කරන Instruction එක
-      const systemPrompt = "Instruction: Act as a friendly WhatsApp bot. Respond in a casual, natural mix of Sinhala and English (using Sinhala script, but blending in standard English technical/common words naturally where necessary), exactly how friends text each other. Keep it engaging and smart. User Question: ";
+      // 🌟 AI එක පිස්සු කෙළින එක නවත්වන්න System Prompt එක වෙනස් කරා මචං
+      const systemPrompt = "Instruction: You are a friendly WhatsApp bot named SADEW-MD. Respond to the user in a casual, natural, and friendly mix of Sinhala and English (using Sinhala script, but blending in standard English words naturally where necessary), exactly how Sri Lankan friends text each other. Keep it short and engaging. User Question: ";
       const finalQuery = systemPrompt + queryText;
 
       const response = await axios.get("https://whiteshadow-x-api.onrender.com/api/ai/chatgpt", {
@@ -33,30 +33,37 @@ Sparky(
         timeout: 15000
       });
 
-      let resData = response.data;
       let replyAnswer = "";
+      let resData = response.data;
 
-      // 🌟 මෙතනින් තමයි රෝ දත්ත ටික JSON එකක් විදිහට Parse කරලා ලෙඩේ වළක්වන්නේ මචං
+      // 🛠️ ක්‍රමය 1: සාමාන්‍ය JSON Parse එක
       if (typeof resData === "string") {
         try {
           resData = JSON.parse(resData);
         } catch (e) {
-          // JSON නෙවෙයි නම් ආපු Text එක ඒ විදිහටම ගන්නවා
-          replyAnswer = resData; 
+          replyAnswer = resData;
         }
       }
 
       if (resData && typeof resData === "object") {
-        // API එකෙන් ආපු JSON එකෙන් "response" කියන කෑල්ල විතරක් වෙන් කරලා ගන්නවා
         replyAnswer = resData.response || resData.result || resData.reply || resData.data;
-        
-        if (typeof replyAnswer === "object" && replyAnswer !== null) {
-          replyAnswer = replyAnswer.text || JSON.stringify(replyAnswer);
+      }
+
+      // 🛠️ ක්‍රමය 2 (Foolproof): JSON එක String එකක් විදිහටම ආවොත් Regex එකෙන් "response" එක විතරක් කඩා ගන්නවා
+      if (!replyAnswer || typeof replyAnswer === "object" || replyAnswer.includes('{"model"')) {
+        const rawString = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
+        const match = rawString.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (match && match[1]) {
+          replyAnswer = match[1]
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, '\n')
+            .replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16))); // Unicode සිංහල අකුරු හරියට ගන්න
         }
       }
 
+      // අවසාන ආරක්ෂක පියවර
       if (!replyAnswer) {
-        replyAnswer = typeof resData === "object" ? JSON.stringify(resData) : resData;
+        replyAnswer = typeof resData === "object" ? (resData.response || JSON.stringify(resData)) : resData;
       }
 
       await m.react('💬');
