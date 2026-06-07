@@ -6,15 +6,28 @@ const {
 } = require("@whiskeysockets/baileys");
 const { Sparky } = require("../lib");
 
-const API_TOKEN = "VK4fry";
+const API_TOKEN = process.env.WHITESHADOW_API_TOKEN || "VK4fry";
 const WHITESHADOW_API =
   "https://whiteshadow-x-api.onrender.com/api/search/tiktok";
 const TIKWM_SEARCH_API = "https://tikwm.com/api/feed/search";
-const MAX_RESULTS = 6;
+const MAX_RESULTS = Number(process.env.TS_MAX_RESULTS || 6);
+const MAX_VIDEO_MB = Number(process.env.TS_MAX_VIDEO_MB || 45);
+const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
 
-const OUTER_HEADER_TITLE = "ＬＯＡＤＩＮＧ．．． ＳＡＤＥＷ ＭＤ";
-const OUTER_FOOTER_TEXT = "│ ᴘᴏᴡᴇʀᴅ ʙʏ sᴀᴅᴇᴡ-ᴍᴅ";
-const CARD_FOOTER_TEXT = "SADEW LITE BOT";
+const EMOJI_SEARCH = "\uD83D\uDD0D";
+const EMOJI_SUCCESS = "\u26A1";
+const EMOJI_ERROR = "\u274C";
+const EMOJI_DOWNLOAD = "\uD83D\uDCE5";
+const OUTER_HEADER_TITLE = toFullWidth("LOADING... WHITESHADOW");
+const OUTER_FOOTER_TEXT = "| POWERED BY SADEW-MD";
+const CARD_FOOTER_TEXT = "WHITESHADOW LITE BOT";
+
+function toFullWidth(text) {
+  return String(text).replace(/[A-Z0-9.]/g, (char) => {
+    if (char === ".") return "\uFF0E";
+    return String.fromCharCode(char.charCodeAt(0) + 0xfee0);
+  });
+}
 
 function getJid(m) {
   return m.jid || m.chat || m.from || m.key?.remoteJid;
@@ -29,7 +42,7 @@ function getSearchQuery(args) {
 function truncateText(value, maxLength) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 1)}…`;
+  return `${text.slice(0, maxLength - 1)}\u2026`;
 }
 
 function pickResultsArray(payload) {
@@ -113,9 +126,15 @@ function normalizeVideo(rawVideo, index) {
     pickFirstString(
       rawVideo.play,
       rawVideo.wmplay,
+      rawVideo.hdplay,
+      rawVideo.video,
       rawVideo.video_url,
       rawVideo.play_url,
-      rawVideo.download_url
+      rawVideo.download,
+      rawVideo.download_url,
+      rawVideo.no_watermark,
+      rawVideo.nowm,
+      rawVideo.nwm_video_url
     )
   );
   const pageUrl = pickFirstString(
@@ -131,6 +150,7 @@ function normalizeVideo(rawVideo, index) {
     title,
     body,
     thumbnail,
+    directVideo,
     url: pageUrl || directVideo,
   };
 }
@@ -186,35 +206,70 @@ async function fetchTikwmResults(searchQuery) {
 
 async function fetchTikTokResults(searchQuery) {
   try {
-    console.log(`Searching TikTok via WhiteShadow for: ${searchQuery}`);
-    const videos = await fetchWhiteShadowResults(searchQuery);
-    const usable = videos.filter((video) => video.url).slice(0, MAX_RESULTS);
+    console.log(`Searching TikTok via TikWM for: ${searchQuery}`);
+    const videos = await fetchTikwmResults(searchQuery);
+    const usable = videos
+      .filter((video) => video.url && video.directVideo)
+      .slice(0, MAX_RESULTS);
     if (usable.length) return usable;
   } catch (error) {
-    console.error("WhiteShadow TikTok API error:", error.message);
+    console.error("TikWM Search API error:", error.message);
   }
 
-  console.log(`Searching TikTok via TikWM for: ${searchQuery}`);
-  const videos = await fetchTikwmResults(searchQuery);
-  const usable = videos.filter((video) => video.url).slice(0, MAX_RESULTS);
+  console.log(`Searching TikTok via WhiteShadow for: ${searchQuery}`);
+  const videos = await fetchWhiteShadowResults(searchQuery);
+  const usable = videos
+    .filter((video) => video.url && video.directVideo)
+    .slice(0, MAX_RESULTS);
 
-  if (!usable.length) throw new Error("No TikTok results found");
+  if (!usable.length) throw new Error("No downloadable TikTok videos found");
   return usable;
 }
 
-async function prepareImageHeader(client, thumbnailUrl) {
-  if (!thumbnailUrl) throw new Error("Missing thumbnail URL");
+async function downloadVideoBuffer(url) {
+  const response = await axios.get(url, {
+    responseType: "arraybuffer",
+    timeout: 25000,
+    maxContentLength: MAX_VIDEO_BYTES,
+    maxBodyLength: MAX_VIDEO_BYTES,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36",
+      Referer: "https://tikwm.com/",
+      Accept: "video/mp4,video/*,*/*",
+    },
+  });
 
-  return prepareWAMessageMedia(
+  const buffer = Buffer.from(response.data);
+  if (!buffer.length) throw new Error("Downloaded video buffer is empty");
+  if (buffer.length > MAX_VIDEO_BYTES) {
+    throw new Error(`Video is bigger than ${MAX_VIDEO_MB}MB`);
+  }
+
+  return buffer;
+}
+
+async function prepareVideoHeader(client, video) {
+  if (!video.directVideo) throw new Error("Missing direct video URL");
+
+  console.log(`Downloading carousel video buffer for: ${video.title}`);
+  const buffer = await downloadVideoBuffer(video.directVideo);
+  const media = await prepareWAMessageMedia(
     {
-      image: {
-        url: thumbnailUrl,
-      },
+      video: buffer,
+      mimetype: "video/mp4",
     },
     {
       upload: client.waUploadToServer,
     }
   );
+
+  if (!media.videoMessage) throw new Error("Baileys did not create videoMessage");
+
+  media.videoMessage.mimetype = "video/mp4";
+  media.videoMessage.gifPlayback = false;
+
+  return media.videoMessage;
 }
 
 async function buildCarouselCards(client, videos) {
@@ -223,12 +278,12 @@ async function buildCarouselCards(client, videos) {
 
   for (const video of videos) {
     try {
-      const media = await prepareImageHeader(client, video.thumbnail);
+      const videoMessage = await prepareVideoHeader(client, video);
       const card = createProto(InteractiveMessage, {
         header: createProto(InteractiveMessage.Header, {
           title: truncateText(video.title, 30),
           hasMediaAttachment: true,
-          imageMessage: media.imageMessage,
+          videoMessage,
         }),
         body: createProto(InteractiveMessage.Body, {
           text: truncateText(video.body, 60),
@@ -241,7 +296,7 @@ async function buildCarouselCards(client, videos) {
             {
               name: "quick_reply",
               buttonParamsJson: JSON.stringify({
-                display_text: "📥 Download Video",
+                display_text: `${EMOJI_DOWNLOAD} Download Video`,
                 id: `.tiktok ${video.url}`,
               }),
             },
@@ -251,7 +306,7 @@ async function buildCarouselCards(client, videos) {
 
       cards.push(card);
     } catch (error) {
-      console.error(`TS card skipped: ${video.title}`, error.message);
+      console.error(`TS video card skipped: ${video.title}`, error.message);
     }
   }
 
@@ -271,7 +326,7 @@ async function sendCarousel(m, client, searchQuery, videos) {
   }
 
   const cards = await buildCarouselCards(client, videos);
-  if (!cards.length) throw new Error("Could not process any video or image cards");
+  if (!cards.length) throw new Error("Could not process any video cards");
 
   const interactiveMessage = createProto(InteractiveMessage, {
     header: createProto(InteractiveMessage.Header, {
@@ -279,7 +334,7 @@ async function sendCarousel(m, client, searchQuery, videos) {
       hasMediaAttachment: false,
     }),
     body: createProto(InteractiveMessage.Body, {
-      text: `TikTok video results for: ${searchQuery}`,
+      text: `${EMOJI_SEARCH} TikTok Search: ${searchQuery}`,
     }),
     footer: createProto(InteractiveMessage.Footer, {
       text: OUTER_FOOTER_TEXT,
@@ -315,7 +370,7 @@ async function sendCarousel(m, client, searchQuery, videos) {
 
 async function sendFallbackList(m, client, searchQuery, videos) {
   const lines = [
-    `TikTok search results for: ${searchQuery}`,
+    `${EMOJI_SEARCH} TikTok search results for: ${searchQuery}`,
     "",
     ...videos.slice(0, MAX_RESULTS).map((video, index) => {
       const title = truncateText(video.title || `TikTok Result ${index + 1}`, 80);
@@ -338,30 +393,30 @@ Sparky(
     const searchQuery = getSearchQuery(args);
 
     if (!searchQuery) {
-      return sendText(m, client, "❌ *Usage:* `.ts sadew`");
+      return sendText(m, client, `${EMOJI_ERROR} *Usage:* \`.ts sadew\``);
     }
 
     try {
-      await safeReact(m, "🔍");
+      await safeReact(m, EMOJI_SEARCH);
 
       const videos = await fetchTikTokResults(searchQuery);
 
       try {
         await sendCarousel(m, client, searchQuery, videos);
       } catch (carouselError) {
-        console.error("TS carousel failed, sending fallback:", carouselError);
+        console.error("TS video carousel failed, sending fallback:", carouselError);
         await sendFallbackList(m, client, searchQuery, videos);
       }
 
-      await safeReact(m, "⚡");
+      await safeReact(m, EMOJI_SUCCESS);
     } catch (error) {
       console.error("Main TS Command Error:", error);
-      await safeReact(m, "❌");
+      await safeReact(m, EMOJI_ERROR);
 
       return sendText(
         m,
         client,
-        `❌ TikTok search failed.\nReason: ${
+        `${EMOJI_ERROR} TikTok search failed.\nReason: ${
           error?.response?.data?.message || error.message || "Unknown Error"
         }`
       );
