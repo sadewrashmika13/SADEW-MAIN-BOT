@@ -1,4 +1,9 @@
 const axios = require("axios");
+const { spawn } = require("child_process");
+const crypto = require("crypto");
+const fsp = require("fs/promises");
+const os = require("os");
+const path = require("path");
 const { Sparky } = require("../lib");
 
 const API_BASE_URL = "https://whiteshadow-x-api.onrender.com/api";
@@ -10,6 +15,9 @@ const API_TOKEN =
 const VIDEO_QUALITY = process.env.YT_VIDEO_QUALITY || "1080";
 const MAX_VIDEO_MB = Number(process.env.MAX_VIDEO_MB || 120);
 const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
+const FFMPEG_CRF = process.env.YT_FFMPEG_CRF || "18";
+const FFMPEG_PRESET = process.env.YT_FFMPEG_PRESET || "veryfast";
+const SEND_AS_DOCUMENT = process.env.YT_SEND_AS_DOCUMENT !== "false";
 
 const AXIOS_JSON_CONFIG = {
   timeout: 60000,
@@ -131,23 +139,25 @@ function findFirstYouTubeResult(node) {
   return null;
 }
 
-function collectUrls(node, path = [], urls = []) {
+function collectUrls(node, pathParts = [], urls = []) {
   if (!node) return urls;
 
   if (typeof node === "string") {
     const trimmed = node.trim();
-    if (isHttpUrl(trimmed)) urls.push({ url: trimmed, path: path.join(".") });
+    if (isHttpUrl(trimmed)) urls.push({ url: trimmed, path: pathParts.join(".") });
     return urls;
   }
 
   if (Array.isArray(node)) {
-    node.forEach((value, index) => collectUrls(value, [...path, index], urls));
+    node.forEach((value, index) =>
+      collectUrls(value, [...pathParts, index], urls)
+    );
     return urls;
   }
 
   if (typeof node === "object") {
     Object.entries(node).forEach(([key, value]) =>
-      collectUrls(value, [...path, key], urls)
+      collectUrls(value, [...pathParts, key], urls)
     );
   }
 
@@ -157,17 +167,19 @@ function collectUrls(node, path = [], urls = []) {
 function pickDirectVideoUrl(data) {
   const urls = collectUrls(data)
     .map((item) => {
-      const path = item.path.toLowerCase();
+      const itemPath = item.path.toLowerCase();
       const url = item.url;
       let score = 0;
 
-      if (/download|dl|direct/.test(path)) score += 8;
-      if (/mp4|video|media|file|url|link/.test(path)) score += 5;
-      if (/\.mp4(\?|$)|videoplayback|googlevideo|ytmp4|download/i.test(url))
+      if (/download|dl|direct/.test(itemPath)) score += 8;
+      if (/mp4|video|media|file|url|link/.test(itemPath)) score += 5;
+      if (/\.mp4(\?|$)|videoplayback|googlevideo|ytmp4|download/i.test(url)) {
         score += 8;
+      }
       if (isYouTubeUrl(url)) score -= 20;
-      if (/thumbnail|thumb|image|cover|avatar/.test(path) || isImageUrl(url))
+      if (/thumbnail|thumb|image|cover|avatar/.test(itemPath) || isImageUrl(url)) {
         score -= 20;
+      }
 
       return { ...item, score };
     })
@@ -187,6 +199,106 @@ function safeFileName(title) {
   );
 }
 
+function getFfmpegPath() {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+
+  try {
+    return require("@ffmpeg-installer/ffmpeg").path;
+  } catch {
+    // Optional dependency. The GitHub Actions runner can also provide ffmpeg.
+  }
+
+  try {
+    const staticPath = require("ffmpeg-static");
+    if (staticPath) return staticPath;
+  } catch {
+    // Optional dependency.
+  }
+
+  return "ffmpeg";
+}
+
+function runProcess(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      windowsHide: true,
+      ...options,
+    });
+    let stderr = "";
+
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+      if (stderr.length > 6000) stderr = stderr.slice(-6000);
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) return resolve();
+      reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
+    });
+  });
+}
+
+async function makePhoneCompatibleMp4(inputBuffer) {
+  const ffmpegPath = getFfmpegPath();
+  const tempRoot = process.env.VIDEO_TMP_DIR || os.tmpdir();
+  const tempDir = path.join(
+    tempRoot,
+    `sadew-video-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`
+  );
+  const inputPath = path.join(tempDir, "input.mp4");
+  const outputPath = path.join(tempDir, "phone-compatible.mp4");
+
+  await fsp.mkdir(tempDir, { recursive: true });
+
+  try {
+    await fsp.writeFile(inputPath, inputBuffer);
+
+    await runProcess(ffmpegPath, [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      inputPath,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0?",
+      "-c:v",
+      "libx264",
+      "-preset",
+      FFMPEG_PRESET,
+      "-crf",
+      FFMPEG_CRF,
+      "-pix_fmt",
+      "yuv420p",
+      "-vf",
+      "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+      "-profile:v",
+      "high",
+      "-level",
+      "4.2",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-movflags",
+      "+faststart",
+      "-max_muxing_queue_size",
+      "1024",
+      outputPath,
+    ]);
+
+    const outputBuffer = await fsp.readFile(outputPath);
+    if (!outputBuffer.length) throw new Error("ffmpeg output file is empty");
+
+    return outputBuffer;
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function sendText(m, client, text) {
   const jid = getJid(m);
 
@@ -201,12 +313,19 @@ async function sendText(m, client, text) {
 
 async function sendVideo(m, client, buffer, caption, fileName) {
   const jid = getJid(m);
-  const payload = {
-    video: buffer,
-    mimetype: "video/mp4",
-    caption,
-    fileName,
-  };
+  const payload = SEND_AS_DOCUMENT
+    ? {
+        document: buffer,
+        mimetype: "video/mp4",
+        fileName,
+        caption,
+      }
+    : {
+        video: buffer,
+        mimetype: "video/mp4",
+        caption,
+        fileName,
+      };
 
   if (typeof client?.sendMessage === "function") {
     return client.sendMessage(jid, payload, { quoted: m });
@@ -282,20 +401,18 @@ Sparky(
       return sendText(
         m,
         client,
-        "📹 Use karanna: .video <YouTube link / search text>\n\nExample:\n.video kudda\n.video link=https://youtu.be/dQw4w9WgXcQ"
+        "Use karanna: .video <YouTube link / search text>\n\nExample:\n.video kudda\n.video link=https://youtu.be/dQw4w9WgXcQ"
       );
     }
 
     try {
-      await m.react?.("🔎");
-
       let videoUrl = extractYouTubeUrl(input);
       let title = "YouTube Video";
       let channel = "";
       let duration = "";
 
       if (!videoUrl) {
-        await sendText(m, client, `🔍 Search karanawa: ${input}`);
+        await sendText(m, client, `Search karanawa: ${input}`);
         const result = await searchYouTube(input);
         videoUrl = result.url;
         title = result.title || title;
@@ -303,30 +420,43 @@ Sparky(
         duration = result.duration || "";
       }
 
-      await sendText(m, client, `⬇️ 1080p video eka download karanawa...\n${title}`);
+      await sendText(m, client, `1080p video eka download karanawa...\n${title}`);
 
       const downloadInfo = await getDownloadInfo(videoUrl);
       if (downloadInfo.title) title = downloadInfo.title;
 
-      const buffer = await downloadVideoBuffer(downloadInfo.directUrl);
-      if (!buffer.length) throw new Error("Downloaded video buffer is empty");
+      const downloadedBuffer = await downloadVideoBuffer(downloadInfo.directUrl);
+      if (!downloadedBuffer.length) {
+        throw new Error("Downloaded video buffer is empty");
+      }
 
-      if (buffer.length > MAX_VIDEO_BYTES) {
-        await m.react?.("⚠️");
+      await sendText(
+        m,
+        client,
+        "Phone ekata support wena MP4 format ekata convert karanawa..."
+      );
+
+      const compatibleBuffer = await makePhoneCompatibleMp4(downloadedBuffer);
+      if (!compatibleBuffer.length) {
+        throw new Error("Compatible video buffer is empty");
+      }
+
+      if (compatibleBuffer.length > MAX_VIDEO_BYTES) {
         return sendText(
           m,
           client,
-          `⚠️ Video eka loku wadi (${Math.round(
-            buffer.length / 1024 / 1024
+          `Video eka loku wadi (${Math.round(
+            compatibleBuffer.length / 1024 / 1024
           )}MB). WhatsApp/GitHub Actions limit eka pass wenna puluwan.\n\nDirect link:\n${downloadInfo.directUrl}`
         );
       }
 
       const details = [
-        `🎬 ${title}`,
-        channel ? `👤 ${channel}` : "",
-        duration ? `⏱️ ${duration}` : "",
-        `📥 Quality: ${VIDEO_QUALITY}p`,
+        `Title: ${title}`,
+        channel ? `Channel: ${channel}` : "",
+        duration ? `Duration: ${duration}` : "",
+        `Quality: ${VIDEO_QUALITY}p`,
+        "Format: MP4 / H.264 / AAC",
       ]
         .filter(Boolean)
         .join("\n");
@@ -334,19 +464,16 @@ Sparky(
       await sendVideo(
         m,
         client,
-        buffer,
+        compatibleBuffer,
         details,
         `${safeFileName(title)}-${VIDEO_QUALITY}p.mp4`
       );
-
-      await m.react?.("✅");
     } catch (error) {
       console.error("video command error:", error);
-      await m.react?.("❌");
       return sendText(
         m,
         client,
-        `❌ Video eka download karanna bari una.\nReason: ${
+        `Video eka download karanna bari una.\nReason: ${
           error?.response?.data?.message || error.message || "Unknown error"
         }`
       );
