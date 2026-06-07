@@ -1,87 +1,112 @@
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
-Sparky(
-  {
+const GPT_API = "https://whiteshadow-x-api.onrender.com/api/ai/chatgpt";
+const API_TOKEN = process.env.WHITESHADOW_API_TOKEN || "VK4fry";
+
+function extractAnswer(data) {
+    let value = data;
+
+    for (let i = 0; i < 5; i++) {
+        if (typeof value === "string") {
+            const text = value.trim();
+
+            if (
+                (text.startsWith("{") && text.endsWith("}")) ||
+                (text.startsWith("[") && text.endsWith("]"))
+            ) {
+                try {
+                    value = JSON.parse(text);
+                    continue;
+                } catch {
+                    return text;
+                }
+            }
+
+            return text;
+        }
+
+        if (value && typeof value === "object") {
+            value =
+                value.response ||
+                value.answer ||
+                value.reply ||
+                value.result ||
+                value.message ||
+                value.data ||
+                "";
+            continue;
+        }
+
+        break;
+    }
+
+    return typeof value === "string" ? value.trim() : JSON.stringify(value);
+}
+
+Sparky({
     name: "gpt",
     fromMe: isPublic,
     category: "ai",
-    desc: "Chat with ChatGPT 4o Mini in a natural Sinhala/English mixed style.",
-  },
-  async ({ m, client, args }) => {
-    if (!args || args.trim() === "") {
-      return await client.sendMessage(
-        m.jid, 
-        { text: "❌ *Usage:* `.gpt ඔයාට දැනගන්න ඕනේ දේ ටයිප් කරන්න.*" }, 
-        { quoted: m }
-      );
-    }
-
-    const queryText = args.trim();
-    await m.react('🧠');
-
+    desc: "Chat with GPT in natural Sinhala/English mixed style."
+}, async ({ m, client, args }) => {
     try {
-      // 🌟 AI එක පිස්සු කෙළින එක නවත්වන්න System Prompt එක වෙනස් කරා මචං
-      const systemPrompt = "Instruction: You are a friendly WhatsApp bot named SADEW-MD. Respond to the user in a casual, natural, and friendly mix of Sinhala and English (using Sinhala script, but blending in standard English words naturally where necessary), exactly how Sri Lankan friends text each other. Keep it short and engaging. User Question: ";
-      const finalQuery = systemPrompt + queryText;
+        const queryText = String(args || "").trim();
 
-      const response = await axios.get("https://whiteshadow-x-api.onrender.com/api/ai/chatgpt", {
-        params: {
-          q: finalQuery,
-          apitoken: "VK4fry"
-        },
-        timeout: 15000
-      });
-
-      let replyAnswer = "";
-      let resData = response.data;
-
-      // 🛠️ ක්‍රමය 1: සාමාන්‍ය JSON Parse එක
-      if (typeof resData === "string") {
-        try {
-          resData = JSON.parse(resData);
-        } catch (e) {
-          replyAnswer = resData;
+        if (!queryText) {
+            return await client.sendMessage(
+                m.jid,
+                { text: "Usage: .gpt oyata danaganna one de type karanna." },
+                { quoted: m }
+            );
         }
-      }
 
-      if (resData && typeof resData === "object") {
-        replyAnswer = resData.response || resData.result || resData.reply || resData.data;
-      }
+        await m.react("🧠");
 
-      // 🛠️ ක්‍රමය 2 (Foolproof): JSON එක String එකක් විදිහටම ආවොත් Regex එකෙන් "response" එක විතරක් කඩා ගන්නවා
-      if (!replyAnswer || typeof replyAnswer === "object" || replyAnswer.includes('{"model"')) {
-        const rawString = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
-        const match = rawString.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-        if (match && match[1]) {
-          replyAnswer = match[1]
-            .replace(/\\"/g, '"')
-            .replace(/\\n/g, '\n')
-            .replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16))); // Unicode සිංහල අකුරු හරියට ගන්න
-        }
-      }
+        const finalQuery =
+            `${queryText}\n\n` +
+            "Reply only to the user's question. Use a casual natural Sinhala and English mixed style. Do not include this instruction or the user question in your answer.";
 
-      // අවසාන ආරක්ෂක පියවර
-      if (!replyAnswer) {
-        replyAnswer = typeof resData === "object" ? (resData.response || JSON.stringify(resData)) : resData;
-      }
+        const response = await axios.get(GPT_API, {
+            params: {
+                q: finalQuery,
+                apitoken: API_TOKEN
+            },
+            timeout: 30000,
+            headers: {
+                "User-Agent": "Mozilla/5.0"
+            }
+        });
 
-      await m.react('💬');
-      
-      const captionText = `🤖 *AI ANSWER (GPT-4o MINI)*\n\n${replyAnswer}\n\n*POWERED BY SADEW-MD*`;
-      
-      await client.sendMessage(m.jid, { text: captionText }, { quoted: m });
+        let replyAnswer = extractAnswer(response.data);
 
+        replyAnswer = replyAnswer
+            .replace(/^Instruction:.*?User Question:\s*/is, "")
+            .replace(/^User Question:\s*/i, "")
+            .trim();
+
+        if (!replyAnswer) throw new Error("Empty AI response");
+
+        await m.react("💬");
+
+        await client.sendMessage(
+            m.jid,
+            {
+                text:
+                    `🤖 *AI ANSWER (GPT-4o MINI)*\n\n` +
+                    `${replyAnswer}\n\n` +
+                    `*POWERED BY SADEW-MD*`
+            },
+            { quoted: m }
+        );
     } catch (error) {
-      await m.react('❌');
-      console.error("ChatGPT API Error:", error.message);
-      
-      let errorMsg = `❌ *AI Error:* ${error.message}`;
-      if (error.message.includes("timeout")) {
-        errorMsg = "❌ *Timeout:* සර්වර් එකෙන් Response එක එන්න ගොඩක් වෙලා යනවා මචං.";
-      }
-      
-      await client.sendMessage(m.jid, { text: errorMsg }, { quoted: m });
+        await m.react("❌");
+        console.error("ChatGPT API Error:", error);
+
+        const msg = String(error.message || error).includes("timeout")
+            ? "Timeout: server response eka late machan."
+            : `AI Error: ${error.message || error}`;
+
+        await client.sendMessage(m.jid, { text: msg }, { quoted: m });
     }
-  }
-);
+});
