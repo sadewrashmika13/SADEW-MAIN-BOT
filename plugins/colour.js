@@ -1,78 +1,240 @@
-const Jimp = require('jimp'); 
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys'); 
-const { Sparky } = require('../lib'); 
+const sharp = require("sharp");
+const { Sparky } = require("../lib");
 
-// Saturation (කලර් වැඩි කරන) මට්ටම් 5
-const satLevels = {
-    '1': 20,  
-    '2': 40,  
-    '3': 60,  
-    '4': 80,  
-    '5': 100  
+let downloadContentFromMessage;
+try {
+  ({ downloadContentFromMessage } = require("@whiskeysockets/baileys"));
+} catch {
+  ({ downloadContentFromMessage } = require("baileys"));
+}
+
+const EMOJI_WORKING = "\uD83C\uDFA8";
+const EMOJI_DONE = "\u2705";
+const EMOJI_ERROR = "\u274C";
+
+const LEVELS = {
+  1: { saturation: 1.18, brightness: 1.02, contrast: 1.04, sharpen: 0.6 },
+  2: { saturation: 1.32, brightness: 1.03, contrast: 1.06, sharpen: 0.8 },
+  3: { saturation: 1.48, brightness: 1.04, contrast: 1.08, sharpen: 1.0 },
+  4: { saturation: 1.65, brightness: 1.05, contrast: 1.1, sharpen: 1.2 },
+  5: { saturation: 1.85, brightness: 1.06, contrast: 1.12, sharpen: 1.4 },
 };
 
-Sparky(
-    {
-        // 🛠️ ප්‍රීෆික්ස් එක විදිහට ඩොට් එක (^\.) අනිවාර්ය කරලා Regex එක හැදුවා මචං
-        name: /^\.(colour|color)\s*([1-5])$/i, 
-        fromMe: false,
-        category: 'editor',
-        desc: 'Edit a photo to increase colour/saturation based on level 1-5 with dot prefix.',
-        use: 'Reply to a photo with .colour 1-5 or .color 1-5'
-    },
-    async ({ m, client, match }) => {
-        // match[1] = colour/color, match[2] = මට්ටම (1-5)
-        const cmdName = match[1]; 
-        const level = match[2];
-        const jid = m.chat;
+function getJid(m) {
+  return m.jid || m.chat || m.from || m.key?.remoteJid;
+}
 
-        // 1. ෆොටෝ එකකට reply කරලාද බලනවා
-        const quoted = m.quoted ? m.quoted : m;
-        const mime = quoted.msg?.mimetype || '';
+function getArgsText(args) {
+  if (Array.isArray(args)) return args.join(" ").trim();
+  if (typeof args === "string") return args.trim();
+  return "";
+}
 
-        if (!mime.startsWith('image')) {
-            await m.react('❌');
-            return await client.sendMessage(jid, { text: '❌ කරුණාකර පින්තූරයකට reply කරලා මේ කමාන්ඩ් එක ගහන්න.' });
-        }
+function getLevel(args) {
+  const match = getArgsText(args).match(/\b([1-5])\b/);
+  return match ? Number(match[1]) : null;
+}
 
-        try {
-            await m.react('📥'); 
+function unwrapMessage(message) {
+  let content = message;
 
-            // 2. Reply කරපු පින්තූරයේ buffer එක බාගැනීම
-            const stream = await downloadContentFromMessage(quoted.msg, 'image');
-            let buffer = Buffer.from([]);
-            for await(const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk]);
-            }
+  while (
+    content?.ephemeralMessage ||
+    content?.viewOnceMessage ||
+    content?.viewOnceMessageV2 ||
+    content?.viewOnceMessageV2Extension
+  ) {
+    content =
+      content.ephemeralMessage?.message ||
+      content.viewOnceMessage?.message ||
+      content.viewOnceMessageV2?.message ||
+      content.viewOnceMessageV2Extension?.message;
+  }
 
-            // 3. Image Processing කොටස
-            await m.react('🎨'); 
+  return content;
+}
 
-            const image = await Jimp.read(buffer); 
-            const satAmount = satLevels[level]; 
+function findImageMessage(content) {
+  const unwrapped = unwrapMessage(content?.message || content);
+  if (!unwrapped || typeof unwrapped !== "object") return null;
 
-            // කලර් වැඩි කරලා HD Quality එකෙන්ම අවුට්පුට් එක හදනවා
-            image
-                .normalize()
-                .color([{ apply: 'saturate', params: [satAmount] }]);
+  if (unwrapped.imageMessage) return unwrapped.imageMessage;
+  if (unwrapped.quotedMessage) return findImageMessage(unwrapped.quotedMessage);
 
-            const editedBuffer = await image.getBufferAsync(Jimp.MIME_JPEG, { quality: 100 });
-
-            // 4. එඩිට් වෙච්ච පින්තූරය යැවීම
-            await m.react('✅'); 
-            await client.sendMessage(
-                jid, 
-                { 
-                    image: editedBuffer, 
-                    caption: `🎨 *Edited via Sadew-MD*\n✨ *Command:* .${cmdName}${level}\n💎 *Saturation:* +${satAmount}%` 
-                }, 
-                { quoted: m }
-            );
-
-        } catch (error) {
-            console.error('Image editor error:', error);
-            await m.react('❌');
-            return await client.sendMessage(jid, { text: `❌ පින්තූරය එඩිට් කරන්න බැරි වුණා.` });
-        }
+  for (const value of Object.values(unwrapped)) {
+    if (value && typeof value === "object") {
+      const found = findImageMessage(value);
+      if (found) return found;
     }
+  }
+
+  return null;
+}
+
+function getQuotedContent(m) {
+  return (
+    m.quoted ||
+    m.reply_message ||
+    m.quotedMsg ||
+    m.message?.extendedTextMessage?.contextInfo?.quotedMessage ||
+    m.message
+  );
+}
+
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+async function downloadImageBuffer(m, client) {
+  const quoted = getQuotedContent(m);
+
+  if (quoted && typeof quoted.download === "function") {
+    const buffer = await quoted.download();
+    if (Buffer.isBuffer(buffer) && buffer.length) return buffer;
+  }
+
+  if (typeof m.download === "function") {
+    const buffer = await m.download();
+    if (Buffer.isBuffer(buffer) && buffer.length) return buffer;
+  }
+
+  if (client && typeof client.downloadMediaMessage === "function" && quoted) {
+    try {
+      const buffer = await client.downloadMediaMessage(quoted);
+      if (Buffer.isBuffer(buffer) && buffer.length) return buffer;
+    } catch (error) {
+      console.error("colour command client.downloadMediaMessage failed:", error);
+    }
+  }
+
+  const imageMessage = findImageMessage(quoted);
+  if (!imageMessage) {
+    throw new Error("Please reply to a photo.");
+  }
+
+  const stream = await downloadContentFromMessage(imageMessage, "image");
+  const buffer = await streamToBuffer(stream);
+  if (!buffer.length) throw new Error("Could not download the replied photo.");
+
+  return buffer;
+}
+
+async function enhanceImage(inputBuffer, level) {
+  const config = LEVELS[level];
+  const contrastOffset = Math.round(128 - 128 * config.contrast);
+
+  return sharp(inputBuffer, { limitInputPixels: false })
+    .rotate()
+    .modulate({
+      saturation: config.saturation,
+      brightness: config.brightness,
+    })
+    .linear(config.contrast, contrastOffset)
+    .sharpen({ sigma: config.sharpen })
+    .jpeg({
+      quality: 98,
+      chromaSubsampling: "4:4:4",
+      progressive: true,
+      mozjpeg: false,
+    })
+    .toBuffer();
+}
+
+async function safeReact(m, emoji) {
+  try {
+    await m.react?.(emoji);
+  } catch (error) {
+    console.error("colour command react error:", error);
+  }
+}
+
+async function sendText(m, client, text) {
+  const jid = getJid(m);
+
+  if (typeof m.reply === "function") return m.reply(text);
+  if (typeof m.sendMsg === "function") return m.sendMsg(jid, text, { quoted: m });
+  if (typeof client?.sendMessage === "function") {
+    return client.sendMessage(jid, { text }, { quoted: m });
+  }
+
+  throw new Error("No supported text send method found");
+}
+
+async function sendImage(m, client, buffer, caption) {
+  const jid = getJid(m);
+  const payload = {
+    image: buffer,
+    mimetype: "image/jpeg",
+    caption,
+  };
+
+  if (typeof client?.sendMessage === "function") {
+    return client.sendMessage(jid, payload, { quoted: m });
+  }
+  if (typeof m.sendMsg === "function") {
+    return m.sendMsg(jid, payload, { quoted: m });
+  }
+
+  throw new Error("No supported image send method found");
+}
+
+async function colourHandler({ m, client, args }) {
+  const level = getLevel(args);
+
+  if (!level) {
+    return sendText(
+      m,
+      client,
+      `${EMOJI_ERROR} *Usage:* Reply photo ekakata \`.colour 1\`\n\nLevels: 1, 2, 3, 4, 5\nAlso works: \`.color 1\``
+    );
+  }
+
+  try {
+    await safeReact(m, EMOJI_WORKING);
+
+    const inputBuffer = await downloadImageBuffer(m, client);
+    const outputBuffer = await enhanceImage(inputBuffer, level);
+
+    await sendImage(
+      m,
+      client,
+      outputBuffer,
+      `HD colour enhanced photo\nLevel: ${level}\nPowered by Sadew Rashmika`
+    );
+
+    await safeReact(m, EMOJI_DONE);
+  } catch (error) {
+    console.error("colour command error:", error);
+    await safeReact(m, EMOJI_ERROR);
+
+    return sendText(
+      m,
+      client,
+      `${EMOJI_ERROR} Photo eka edit karanna bari una.\nReason: ${
+        error.message || "Unknown Error"
+      }`
+    );
+  }
+}
+
+Sparky(
+  {
+    name: "colour",
+    fromMe: false,
+    category: "image",
+    desc: "Increase replied photo colour saturation. Use .colour 1 to .colour 5",
+  },
+  colourHandler
+);
+
+Sparky(
+  {
+    name: "color",
+    fromMe: false,
+    category: "image",
+    desc: "Increase replied photo color saturation. Use .color 1 to .color 5",
+  },
+  colourHandler
 );
