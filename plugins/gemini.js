@@ -14,7 +14,7 @@ const EMOJI_DONE = "\u2705";
 const EMOJI_ERROR = "\u274C";
 
 const STYLE_INSTRUCTION =
-  "Reply in a natural Sinhala and English mixed style.nutural sinhala kind friendly sinhala latters. Use friendly clear Sinhala-English mix like a Sri Lankan WhatsApp chat.";
+  "Reply in a natural Sinhala and English mixed style.nutural sinhala kind friendly sinhala latters.don'tUse singlish.use friendly clear Sinhala-English mix like a Sri Lankan WhatsApp chat.";
 
 function getJid(m) {
   return m.jid || m.chat || m.from || m.key?.remoteJid;
