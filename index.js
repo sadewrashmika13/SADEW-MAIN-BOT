@@ -47,8 +47,9 @@ const groupCache = new NodeCache({
   useClones: false,
 });
 
-const menuSessions = global.menuSessions || (global.menuSessions = new Map());
-const MENU_SESSION_TTL = 2 * 60 * 1000;
+const nonPrefixReplySessions =
+  global.nonPrefixReplySessions || (global.nonPrefixReplySessions = new Map());
+const NON_PREFIX_REPLY_TTL = 5 * 60 * 1000;
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -115,120 +116,76 @@ function getSenderId(m) {
   );
 }
 
-function getMenuSessionKey(m) {
+function getDefaultPrefix() {
+  return getPrefixList()[0] || ".";
+}
+
+function getNonPrefixReplyKey(m) {
   return `${getChatId(m)}:${getSenderId(m)}`;
 }
 
-function saveMenuSession(m, type = "main") {
-  const key = getMenuSessionKey(m);
+function saveNonPrefixReplySession(m) {
+  const key = getNonPrefixReplyKey(m);
 
-  menuSessions.set(key, {
-    type,
+  nonPrefixReplySessions.set(key, {
     createdAt: Date.now(),
   });
 
   setTimeout(() => {
-    const session = menuSessions.get(key);
-    if (session && Date.now() - session.createdAt >= MENU_SESSION_TTL) {
-      menuSessions.delete(key);
+    const session = nonPrefixReplySessions.get(key);
+    if (session && Date.now() - session.createdAt >= NON_PREFIX_REPLY_TTL) {
+      nonPrefixReplySessions.delete(key);
     }
-  }, MENU_SESSION_TTL + 1000);
+  }, NON_PREFIX_REPLY_TTL + 1000);
 }
 
-function isExpiredMenuSession(session) {
-  return !session || Date.now() - session.createdAt > MENU_SESSION_TTL;
+function rememberMenuCommandForNonPrefixReplies(m, body) {
+  const text = body.trim();
+  const prefix = findPrefix(text);
+  if (!prefix) return;
+
+  const withoutPrefix = text.slice(prefix.length).trim();
+  const commandName = withoutPrefix.split(/\s+/)[0]?.toLowerCase();
+
+  if (["menu", "help", "list"].includes(commandName)) {
+    saveNonPrefixReplySession(m);
+  }
 }
 
-function mainMenuText() {
-  return `╭───〔 SADEW MD MENU 〕───╮
-│
-│ 1. Download Menu
-│ 2. AI Menu
-│ 3. Tools Menu
-│ 4. Owner Menu
-│
-╰────────────────────╯
+function shouldUseNonPrefixReply(m, body) {
+  const text = body.trim();
+  if (!/^\d{1,3}$/.test(text)) return false;
+  if (findPrefix(text)) return false;
 
-Reply this message with 1, 2, 3, or 4`;
+  const key = getNonPrefixReplyKey(m);
+  const session = nonPrefixReplySessions.get(key);
+  if (!session) return false;
+
+  if (Date.now() - session.createdAt > NON_PREFIX_REPLY_TTL) {
+    nonPrefixReplySessions.delete(key);
+    return false;
+  }
+
+  saveNonPrefixReplySession(m);
+  return true;
 }
 
-function submenuText(number) {
-  const menus = {
-    1: `╭───〔 DOWNLOAD MENU 〕───╮
-│
-│ .timg <TikTok link>
-│ .ttimg <TikTok link>
-│ .slideshow <TikTok link>
-│ .ttphoto <TikTok link>
-│
-╰────────────────────╯`,
+function applyNonPrefixReplyBody(m, body) {
+  if (!shouldUseNonPrefixReply(m, body)) return body;
 
-    2: `╭───〔 AI MENU 〕───╮
-│
-│ .ai <question>
-│ .ask <question>
-│ .groq <question>
-│
-╰────────────────────╯`,
+  const normalizedBody = `${getDefaultPrefix()}${body.trim()}`;
+  m.originalBody = body;
+  m.body = normalizedBody;
 
-    3: `╭───〔 TOOLS MENU 〕───╮
-│
-│ .ping
-│ .runtime
-│ .alive
-│ .jid
-│
-╰────────────────────╯`,
+  if (typeof m.text === "string") {
+    m.text = normalizedBody;
+  }
 
-    4: `╭───〔 OWNER MENU 〕───╮
-│
-│ .restart
-│ .shutdown
-│ .block
-│ .unblock
-│
-╰────────────────────╯`,
-  };
-
-  return menus[number];
+  return normalizedBody;
 }
 
 async function sendText(client, jid, text, quoted) {
   return client.sendMessage(jid, { text }, quoted ? { quoted } : {});
-}
-
-async function handleBuiltInMenu(client, m) {
-  const body = getBody(m).trim();
-  const prefix = findPrefix(body);
-  if (!prefix) return false;
-
-  const withoutPrefix = body.slice(prefix.length).trim();
-  const commandName = withoutPrefix.split(/\s+/)[0]?.toLowerCase();
-
-  if (!["menu", "help", "list"].includes(commandName)) return false;
-
-  saveMenuSession(m, "main");
-  await sendText(client, getChatId(m), mainMenuText(), m);
-  return true;
-}
-
-async function handlePrefixlessMenuReply(client, m) {
-  const body = getBody(m).trim();
-  if (!/^[1-4]$/.test(body)) return false;
-
-  const key = getMenuSessionKey(m);
-  const session = menuSessions.get(key);
-
-  if (isExpiredMenuSession(session)) {
-    menuSessions.delete(key);
-    return false;
-  }
-
-  if (session.type !== "main") return false;
-
-  menuSessions.delete(key);
-  await sendText(client, getChatId(m), submenuText(body), m);
-  return true;
 }
 
 function getCommandNames(command) {
@@ -289,7 +246,9 @@ async function runCommand(command, context) {
 }
 
 async function dispatchCommands(client, m) {
-  const body = getBody(m);
+  let body = getBody(m);
+  rememberMenuCommandForNonPrefixReplies(m, body);
+  body = applyNonPrefixReplyBody(m, body);
 
   for (const command of commands) {
     try {
@@ -592,10 +551,6 @@ async function startBot() {
       }
 
       if (config.DISABLE_PM && !m.isGroup && !m.fromMe) return;
-
-      if (await handlePrefixlessMenuReply(sock, m)) return;
-
-      if (await handleBuiltInMenu(sock, m)) return;
 
       await dispatchCommands(sock, m);
     } catch (error) {
