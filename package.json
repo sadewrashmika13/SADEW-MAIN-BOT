@@ -42,6 +42,8 @@
     "sharp": "^0.33.5",
     "simple-git": "^3.27.0",
     "jimp": "^0.16.13",
-    "tesseract.js": "^6.0.1"
+    "tesseract.js": "^6.0.1",
+    "puppeteer": "^25.0.0",
+    "puppeteer-screen-recorder-improved": "^4.0.0"
   }
 }
