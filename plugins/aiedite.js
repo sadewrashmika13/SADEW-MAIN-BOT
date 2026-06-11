@@ -7,27 +7,61 @@ const AI_EDIT_API_URL = "https://whiteshadow-x-api.onrender.com/api/ai/flatai-ed
 const API_TOKEN = "VK4fry"; // ඔයා දුන්න API Key එක
 
 /**
- * Catbox.moe එකට Image Buffer එකක් Upload කරලා URL එක ගන්න Helper Function එක.
+ * ⚡ Multi-Server Image Uploader Wrapper
+ * Catbox Fail වුණොත් ඔටෝ Tmpfiles එකට මාරු වී URL එක සාදයි.
  */
-async function uploadToCatbox(buffer) {
+async function uploadImageToPublicServer(buffer) {
+  const filename = `sparky_edit_${Date.now()}.jpg`;
+
+  // --- ක්‍රමය 1: Catbox.moe (With Real Browser Headers) ---
   try {
     const formData = new FormData();
     formData.append("reqtype", "fileupload");
-    formData.append("fileToUpload", buffer, {
-      filename: `sparky_edit_${Date.now()}.jpg`,
-      contentType: "image/jpeg",
-    });
+    formData.append("fileToUpload", buffer, { filename, contentType: "image/jpeg" });
 
     const response = await axios.post("https://catbox.moe/user/api.php", formData, {
-      headers: formData.getHeaders(),
-      timeout: 30000,
+      headers: {
+        ...formData.getHeaders(),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Origin": "https://catbox.moe",
+        "Referer": "https://catbox.moe/"
+      },
+      timeout: 25000,
     });
 
-    return response.data;
+    if (response.data && String(response.data).startsWith("https://")) {
+      console.log("Uploaded successfully to Primary (Catbox):", response.data);
+      return response.data;
+    }
   } catch (error) {
-    console.error("Catbox Upload Error:", error.message);
-    return null;
+    console.error("Primary Uploader (Catbox) Failed (Status 412 or Blocked). Trying Backup...");
   }
+
+  // --- ක්‍රමය 2: Tmpfiles.org (Fail-Safe Backup) ---
+  try {
+    const formData = new FormData();
+    formData.append("file", buffer, { filename, contentType: "image/jpeg" });
+
+    const response = await axios.post("https://tmpfiles.org/api/v1/upload", formData, {
+      headers: {
+        ...formData.getHeaders(),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      },
+      timeout: 25000,
+    });
+
+    if (response.data?.data?.url) {
+      // View URL එක Direct Download URL එකක් බවට පත් කිරීම
+      const directUrl = response.data.data.url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
+      console.log("Uploaded successfully to Backup (Tmpfiles):", directUrl);
+      return directUrl;
+    }
+  } catch (error) {
+    console.error("Backup Uploader (Tmpfiles) also failed:", error.message);
+  }
+
+  return null;
 }
 
 // Bot Command එක define කිරීම
@@ -49,7 +83,7 @@ Sparky(
       );
     }
 
-    // ⚡ ඉතාම බලවත් Image Check එකක් (දැන් වැරදෙන්නේ නැත)
+    // Image Check එක
     const isQuotedImage = m.quoted && (
         m.quoted.mtype === "imageMessage" || 
         m.quoted.type === "image" ||
@@ -65,7 +99,7 @@ Sparky(
     // React with Loading
     try { if (typeof m.react === "function") await m.react("⏳"); } catch {}
 
-    // 1. WhatsApp image buffer එක download කරගැනීම (විවිධ ක්‍රම වලට Fail-Safe කර ඇත)
+    // 1. WhatsApp image buffer එක download කරගැනීම
     await m.reply("⏳ _Downloading original image..._");
     let imageBuffer;
     try {
@@ -78,20 +112,20 @@ Sparky(
           if (msg) imageBuffer = await client.downloadMediaMessage(msg);
       }
       
-      if (!imageBuffer) throw new Error("Could not download image. Buffer is empty.");
+      if (!imageBuffer) throw new Error("Buffer empty.");
     } catch (err) {
       console.error("Image Download Error:", err);
       try { if (typeof m.react === "function") await m.react("❌"); } catch {}
-      return await m.reply("❌ *Error:* Failed to download the replied image. " + err.message);
+      return await m.reply("❌ *Error:* Failed to download the replied image.");
     }
 
-    // 2. ෆොටෝ එක URL එකක් බවට පත් කිරීම (Catbox හරහා)
+    // 2. ෆොටෝ එක URL එකක් බවට පත් කිරීම (Multi-Server)
     await m.reply("📤 _Generating public URL..._");
-    const publicImageUrl = await uploadToCatbox(imageBuffer);
+    const publicImageUrl = await uploadImageToPublicServer(imageBuffer);
 
-    if (!publicImageUrl || typeof publicImageUrl !== "string" || !publicImageUrl.startsWith("https")) {
+    if (!publicImageUrl) {
       try { if (typeof m.react === "function") await m.react("❌"); } catch {}
-      return await m.reply("❌ *Error:* Failed to upload image to public server for AI processing.");
+      return await m.reply("❌ *Error:* All upload servers failed to process this image. Cloudflare blocked the request.");
     }
 
     // 3. WhiteShadow AI Edit API එක call කිරීම
@@ -104,8 +138,7 @@ Sparky(
       const apiData = response.data;
 
       if (apiData.status !== "success" || !apiData.result?.edited_image_url) {
-        console.log("AI Edit API fail response:", apiData);
-        throw new Error(apiData.msg || apiData.result?.message || "AI API returned failure status.");
+        throw new Error(apiData.msg || apiData.result?.message || "AI API Failure.");
       }
 
       const editedImageUrl = apiData.result.edited_image_url;
@@ -127,7 +160,7 @@ Sparky(
       try { if (typeof m.react === "function") await m.react("✅"); } catch {}
 
     } catch (apiError) {
-      console.error("AI API Error:", apiError.response?.data || apiError.message);
+      console.error("AI API Error:", apiError.message);
       try { if (typeof m.react === "function") await m.react("❌"); } catch {}
       
       const errMsg = apiError.message.includes("timeout") 
