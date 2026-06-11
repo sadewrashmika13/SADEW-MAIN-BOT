@@ -44,6 +44,6 @@
     "jimp": "^0.16.13",
     "tesseract.js": "^6.0.1",
     "puppeteer": "^25.0.0",
-    "puppeteer-screen-recorder-improved": "^4.0.0"
+    "puppeteer-screen-recorder": "^2.1.1"
   }
 }
