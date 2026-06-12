@@ -16,7 +16,7 @@ const BOT_NAME = "Sadew Rashmika";
 const TOTAL_LIMIT = 20; // උපරිම ෆොටෝ 20ක්
 
 const http = axios.create({
-  timeout: 25000,
+  timeout: 30000, // HD ෆොටෝ නිසා timeout එක පොඩ්ඩක් වැඩි කරා
   maxContentLength: Infinity,
   maxBodyLength: Infinity,
   headers: {
@@ -34,6 +34,25 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || ""));
 }
 
+// ==========================================
+// 🔥 HD UPSCALER LOGIC - (HD QUALITY OPTION)
+// ==========================================
+// පින්ටරෙස්ට් ලින්ක් එකේ තියෙන size markers (236x, 736x) අඳුරගෙන
+// ඒවා ඔරිජිනල් HD (/originals/) ලින්ක් එකක් බවට හරවනවා.
+function upscalePinterestUrl(url) {
+  if (!isHttpUrl(url)) return url;
+  
+  // පින්ටරෙස්ට් ලින්ක්ස් වල සාමාන්‍යයෙන් Thumbnail sizes තියෙන්නේ මෙහෙමයි: /236x/, /474x/, /736x/
+  // අපි මේවා Full HD 'originals' කියන එකට Replace කරනවා.
+  let hqUrl = url.replace(/\/(236x|474x|736x|564x|updates)\//g, '/originals/');
+  
+  // සමහර ලින්ක්ස් වල image path එක අවසානයේ තියෙන size markers අයින් කරනවා.
+  hqUrl = hqUrl.replace(/_236\./g, '.'); // e.g. image_236.jpg -> image.jpg
+  hqUrl = hqUrl.replace(/_736\./g, '.');
+  
+  return hqUrl;
+}
+
 // Pinterest API එකෙන් එන ඩේටා නෝමලයිස් කරගන්න ෆන්ක්ෂන් එක
 function normalizePinterestResults(data) {
   const possibleResults = data?.result || data?.results || data?.data || data;
@@ -42,14 +61,18 @@ function normalizePinterestResults(data) {
   if (Array.isArray(possibleResults)) {
     for (const res of possibleResults) {
       if (typeof res === "string" && isHttpUrl(res)) {
-        items.push({ imageUrl: res, title: "Pinterest Image", sourceUrl: res });
+        // ලින්ක් එකක් විදිහට ආවොත් කෙලින්ම HD කරලා ගන්නවා
+        const hqUrl = upscalePinterestUrl(res);
+        items.push({ imageUrl: hqUrl, title: "Pinterest HD Image", sourceUrl: hqUrl });
       } else if (res && typeof res === "object") {
         const url = res.url || res.image || res.imageUrl || res.link;
         if (url && isHttpUrl(url)) {
+          // ඔබ්ජෙක්ට් එකක් ඇතුළේ ආවොත් URL එක HD කරලා ගන්නවා
+          const hqUrl = upscalePinterestUrl(url);
           items.push({
-            imageUrl: url,
-            title: res.title || "Pinterest Image",
-            sourceUrl: res.source || res.sourceUrl || url,
+            imageUrl: hqUrl,
+            title: res.title || "Pinterest HD Image",
+            sourceUrl: res.source || res.sourceUrl || hqUrl,
           });
         }
       }
@@ -85,7 +108,11 @@ async function searchPinterest(query) {
 }
 
 // GitHub Actions වල ඩිස්ක් එකට ලියන්නේ නැතුව කෙලින්ම RAM Buffer එකට බාගන්න එක
+// (HD ෆොටෝ නිසා ඩවුන්ලෝඩ් වෙන්න පොඩ්ඩක් වෙලා යයි)
 async function downloadImage(item) {
+  // අපි කලින්ම ලින්ක් එක HD කරපු නිසා, මෙතනදී කෙලින්ම originals එක බාන්නේ.
+  console.log(`[Sadew-MD] Downloading HD Image: ${item.imageUrl}`);
+  
   const response = await http.get(item.imageUrl, {
     responseType: "arraybuffer",
     headers: {
@@ -97,6 +124,10 @@ async function downloadImage(item) {
 
   const contentType = String(response.headers["content-type"] || "").toLowerCase();
   
+  if (!contentType.includes("image")) {
+      throw new Error(`URL is not an image. Content-Type: ${contentType}`);
+  }
+
   return {
     ...item,
     buffer: Buffer.from(response.data),
@@ -133,12 +164,12 @@ async function buildCarouselCard(client, image, index, query, batchText) {
 
   return {
     header: proto.Message.InteractiveMessage.Header.fromObject({
-      title: `Image ${index + 1}`,
+      title: `Image ${index + 1} (HD)`,
       hasMediaAttachment: true,
       imageMessage: media.imageMessage,
     }),
     body: proto.Message.InteractiveMessage.Body.fromObject({
-      text: `📌 ${trimText(query)}\n📸 ${trimText(image.title)}\n📦 ${batchText}`,
+      text: `📌 ${trimText(query)}\n🖼️ ${trimText(image.title)}\n📦 ${batchText}`,
     }),
     footer: proto.Message.InteractiveMessage.Footer.fromObject({
       text: "✨ ＳＡＤＥＷ－Ｘ－ＭＤ",
@@ -148,7 +179,7 @@ async function buildCarouselCard(client, image, index, query, batchText) {
         {
           name: "cta_url",
           buttonParamsJson: JSON.stringify({
-            display_text: "Open Image",
+            display_text: "Open HD Source",
             url: image.sourceUrl || image.imageUrl,
             merchant_url: image.sourceUrl || image.imageUrl,
           }),
@@ -173,7 +204,7 @@ async function sendCarouselBatch(client, m, images, query, batchNum) {
 
   const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
     body: proto.Message.InteractiveMessage.Body.fromObject({
-      text: `📸 *Pinterest Image Search* (${batchText})\n\n🔎 Query: *${query}*\n📌 Results: ${images.length}`,
+      text: `📸 *Pinterest HD Search* (${batchText})\n\n🔎 Query: *${query}*\n📌 Results: ${images.length}`,
     }),
     footer: proto.Message.InteractiveMessage.Footer.fromObject({
       text: BOT_NAME,
@@ -205,7 +236,7 @@ async function sendImagesFallback(client, m, images, query, batchNum) {
   for (let i = 0; i < images.length; i += 1) {
     const caption =
       i === 0
-        ? `📸 *Pinterest Search Fallback* (Batch ${batchNum}/2)\n\n🔎 Query: *${query}*\n📌 Sent: ${images.length}\n\n*${BOT_NAME}*`
+        ? `📸 *Pinterest Search HD Fallback* (Batch ${batchNum}/2)\n\n🔎 Query: *${query}*\n📌 Sent: ${images.length}\n\n*${BOT_NAME}*`
         : undefined;
 
     await client.sendMessage(
@@ -217,7 +248,8 @@ async function sendImagesFallback(client, m, images, query, batchNum) {
       },
       { quoted: i === 0 ? m : undefined }
     );
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // HD නිසා Spam නොවෙන්න පොඩි delay එකක්
+    await new Promise(resolve => setTimeout(resolve, 800));
   }
 }
 
@@ -227,7 +259,7 @@ Sparky(
     alias: ["pinterest2", "pimg", "pin2"],
     fromMe: isPublic,
     category: "tools",
-    desc: "Search Pinterest images and send 20 horizontal carousel cards split into 2 batches.",
+    desc: "Search Pinterest images, auto-upscale to HD originals, and send 20 horizontal carousel cards split into 2 batches.",
   },
   async ({ client, m, args }) => {
     const query = getQuery(args);
@@ -237,9 +269,9 @@ Sparky(
       return reply(
         client,
         m,
-        `╭─「 *PINTEREST 2* 」
+        `╭─「 *PINTEREST HD* 」
 │
-├ *Usage:* .img2 anime girl
+├ *Usage:* .img2 anime girl hd
 ├ *Example:* .img2 supercar
 │
 ╰─ *${BOT_NAME}*`
@@ -258,7 +290,7 @@ Sparky(
         try {
           downloadedImages.push(await downloadImage(item));
         } catch (error) {
-          console.log("Pinterest image download failed:", error.message);
+          console.log("[Sadew-MD] Pinterest HD download failed for", item.imageUrl, "-", error.message);
         }
       }
 
@@ -280,8 +312,8 @@ Sparky(
 
       // ==== දෙවන බැච් එක යැවීම ====
       if (batch2.length > 0) {
-        // වට්සැප් මැසේජ් ඕවර්ලැප් නොවෙන්න පොඩි ඩිලේ එකක්
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // වට්සැප් මැසේජ් ඕවර්ලැප් නොවෙන්න හෝ ෆොටෝ ඩවුන්ලෝඩ් වෙන්න HD නිසා පොඩි ඩිලේ එකක්
+        await new Promise(resolve => setTimeout(resolve, TOTAL_LIMIT * 100)); // Adaptive delay based on image count
         try {
           await sendCarouselBatch(client, m, batch2, query, 2);
         } catch (error) {
@@ -297,7 +329,7 @@ Sparky(
       await reply(
         client,
         m,
-        `❌ Pinterest image search කරන්න බැරි වුණා. API එක down වෙලා ඇති හෝ result නැති query එකක් වෙන්න පුළුවන්.`
+        `❌ Pinterest image HD search කරන්න බැරි වුණා. API එක down වෙලා ඇති හෝ result නැති query එකක් වෙන්න පුළුවන්.`
       );
     } finally {
       try {
