@@ -51,7 +51,7 @@ Sparky(
       });
       const videoBuffer = Buffer.from(videoStream.data);
 
-      const captionText = `🎬 *★👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥 ★*Ŧ𝕚ᛕ𝕋𝔬ķ♫*★*\n\n📝 *Title:* ${title}\n✨ *Quality:* ${isHD}\n📦 *Size:* ${(videoBuffer.length / (1024 * 1024)).toFixed(2)}MB\n\n*Downloaded by SADEW-MD*`;
+      const captionText = `🎬 *★👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥 ★*Ŧ𝕚ᛕ𝕋𝔬ķ♫*★*\n\n📝 *Title:* ${title}\n✨ *Quality:* ${isHD}\n📦 *Size:* ${(videoBuffer.length / (1024 * 1024)).toFixed(2)}MB\n\n*Downloaded by ★👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥 ★*`;
 
       // 16MB limit check
       if (videoBuffer.length > 16 * 1024 * 1024) {
