@@ -1,12 +1,10 @@
 // commands/aio.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
-const ytdl = require("ytdl-core");
-const fs = require("fs");
-const path = require("path");
 
 const API_TOKEN = "VK4fry";
-const API_BASE = "https://whiteshadow-x-api.onrender.com/api/download/aio";
+const YT_API_BASE = "https://whiteshadow-x-api.onrender.com/api/download/youtube";
+const AIO_API_BASE = "https://whiteshadow-x-api.onrender.com/api/download/aio";
 
 function getQuery(args) {
     if (!args) return "";
@@ -21,7 +19,7 @@ Sparky({
     alias: ["alldl", "multidownload"],
     category: "download",
     fromMe: isPublic,
-    desc: "🌐 Download video/audio from YouTube, TikTok, Instagram, Twitter, Facebook, etc."
+    desc: "🌍 YouTube, TikTok, Instagram, Facebook, Twitter, etc. වීඩියෝ/ඕඩියෝ බාගන්න"
 }, async ({ client, m, args }) => {
     let url = getQuery(args);
     if (!url) {
@@ -29,8 +27,8 @@ Sparky({
 
 *Usage:* ${m.prefix}aio <link>
 *Examples:*
-${m.prefix}aio https://www.tiktok.com/@user/video/123456789
 ${m.prefix}aio https://youtu.be/xxxxx
+${m.prefix}aio https://www.tiktok.com/@user/video/123
 ${m.prefix}aio https://www.instagram.com/p/xxxxx`);
     }
     if (!url.startsWith("http")) url = "https://" + url;
@@ -40,73 +38,70 @@ ${m.prefix}aio https://www.instagram.com/p/xxxxx`);
     await m.reply(`🔍 *Processing:* ${url}`);
 
     try {
-        // ---------- YOUTUBE ----------
+        // ---------- YOUTUBE (via dedicated API) ----------
         if (url.includes("youtube.com") || url.includes("youtu.be")) {
-            try {
-                // Get video info
-                const info = await ytdl.getInfo(url);
-                const title = info.videoDetails.title;
-                const durationSec = parseInt(info.videoDetails.lengthSeconds);
-                const isLong = durationSec > 300; // 5 minutes
+            // Determine quality: 720p for short (<5 min), 480p for longer
+            // We'll first try 720p, if fails fallback to 480p, then 360p
+            let qualities = ["720p", "480p", "360p"];
+            let success = false;
+            let lastError = null;
 
-                // Choose best format (video+audio combined)
-                let format = ytdl.chooseFormat(info.formats, {
-                    quality: isLong ? 'lowest' : 'highest',
-                    filter: 'videoandaudio'
-                });
-                if (!format) {
-                    // Fallback: video only (will still work)
-                    format = ytdl.chooseFormat(info.formats, {
-                        quality: isLong ? 'lowest' : 'highest',
-                        filter: 'video'
-                    });
+            for (let quality of qualities) {
+                try {
+                    const ytApiUrl = `${YT_API_BASE}?url=${encodeURIComponent(url)}&format=mp4&quality=${quality}&apitoken=${API_TOKEN}`;
+                    const response = await axios.get(ytApiUrl, { timeout: 20000 });
+                    const data = response.data;
+
+                    if (data && data.success === true && data.result && data.result.download_url) {
+                        const title = data.result.title || "YouTube Video";
+                        const author = data.result.author || "Unknown";
+                        const duration = data.result.duration || 0;
+                        const selectedQuality = data.result.selected_quality || quality;
+                        const downloadUrl = data.result.download_url;
+
+                        await m.reply(`📹 *${title}* (${selectedQuality} | ${Math.round(duration/60)} min)\n⬇️ Downloading...`);
+
+                        // Download video buffer
+                        const videoRes = await axios.get(downloadUrl, {
+                            responseType: 'arraybuffer',
+                            timeout: 90000,
+                            headers: { 'User-Agent': 'Mozilla/5.0' },
+                            maxRedirects: 5
+                        });
+                        const buffer = Buffer.from(videoRes.data);
+                        const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+                        const caption = `🎬 *YouTube*\n📹 *${title}*\n👤 *${author}*\n🎚️ *Quality:* ${selectedQuality}\n📦 *Size:* ${fileSizeMB} MB\n\n> *Downloaded via WhiteShadow API*`;
+
+                        await client.sendMessage(m.jid, {
+                            video: buffer,
+                            caption: caption,
+                            mimetype: "video/mp4"
+                        }, { quoted: m });
+
+                        await m.react("✅");
+                        await m.reply(`✅ *Download complete!* (${fileSizeMB} MB)`);
+                        success = true;
+                        break;
+                    } else {
+                        throw new Error(data?.error || "No download URL");
+                    }
+                } catch (err) {
+                    console.error(`YouTube ${quality} failed:`, err.message);
+                    lastError = err;
+                    // continue to next quality
                 }
-                if (!format) throw new Error('No suitable format found');
-
-                const qualityLabel = isLong ? "480p (30fps)" : "720p (30fps)";
-                await m.reply(`📹 *${title}* (${qualityLabel} | ~${Math.round(durationSec/60)} min)\n⬇️ Downloading...`);
-
-                // Download with proper headers and buffer
-                const stream = ytdl(url, {
-                    format: format,
-                    requestOptions: {
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            'Accept-Language': 'en-US,en;q=0.9',
-                        }
-                    },
-                    highWaterMark: 1 << 25, // 32MB buffer
-                });
-
-                const chunks = [];
-                for await (const chunk of stream) chunks.push(chunk);
-                const buffer = Buffer.concat(chunks);
-                const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-                const fileName = `${title.replace(/[^a-z0-9]/gi, '_')}.mp4`;
-                const caption = `🎬 *YouTube*\n📹 *${title}*\n🎚️ *Quality:* ${qualityLabel}\n📦 *Size:* ${fileSizeMB} MB\n\n> *Downloaded with ytdl-core*`;
-
-                await client.sendMessage(m.jid, {
-                    video: buffer,
-                    caption: caption,
-                    mimetype: "video/mp4"
-                }, { quoted: m });
-
-                await m.react("✅");
-                await m.reply(`✅ *Download complete!* (${fileSizeMB} MB)`);
-                return;
-            } catch (ytError) {
-                console.error("YouTube error:", ytError);
-                throw new Error(`YouTube download failed: ${ytError.message.substring(0, 100)}`);
             }
+            if (!success) throw new Error(`YouTube download failed: ${lastError?.message || "All qualities failed"}`);
+            return;
         }
 
-        // ---------- ALL OTHER PLATFORMS (via API) ----------
-        const apiUrl = `${API_BASE}?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
-        const response = await axios.get(apiUrl, { timeout: 20000 });
+        // ---------- OTHER PLATFORMS (TikTok, Instagram, FB, Twitter, etc.) ----------
+        const aioApiUrl = `${AIO_API_BASE}?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
+        const response = await axios.get(aioApiUrl, { timeout: 20000 });
         const data = response.data;
 
         if (!data || data.Status !== true || data.Code !== 200) {
-            throw new Error(data?.Error || "API error (unsupported platform or invalid link)");
+            throw new Error(data?.Error || "Unsupported platform or invalid link");
         }
 
         const result = data.Result;
@@ -114,7 +109,7 @@ ${m.prefix}aio https://www.instagram.com/p/xxxxx`);
             throw new Error("No media found");
         }
 
-        // Select best video (prioritise no_watermark / hd_no_watermark)
+        // Select best video (no watermark, highest quality)
         let bestVideo = null;
         let bestAudio = null;
         for (const media of result.medias) {
@@ -127,8 +122,7 @@ ${m.prefix}aio https://www.instagram.com/p/xxxxx`);
                 bestAudio = media;
             }
         }
-
-        if (!bestVideo) throw new Error("No video URL found");
+        if (!bestVideo) throw new Error("No video URL");
 
         const videoUrl = bestVideo.url;
         const quality = bestVideo.quality || "HD";
@@ -172,9 +166,7 @@ ${m.prefix}aio https://www.instagram.com/p/xxxxx`);
         await m.react("❌");
         let errorMsg = `❌ *Download failed*\n\n`;
         if (error.message.includes("YouTube")) {
-            errorMsg += `YouTube error: ${error.message}\nTry a different video or use another source.`;
-        } else if (error.message.includes("API error") || error.message.includes("No media")) {
-            errorMsg += `Unsupported link or platform.\nSupported: YouTube, TikTok, Instagram, Twitter, Facebook, Reddit, Pinterest, etc.`;
+            errorMsg += `${error.message}\nTry another video or use a different source.`;
         } else {
             errorMsg += `Error: ${error.message.substring(0, 150)}`;
         }
