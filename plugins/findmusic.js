@@ -65,7 +65,7 @@ Sparky(
 
       // 1. Media Download කිරිම
       console.log("[SADEW-MD BOT V2] Downloading media into RAM...");
-      await sendMsg("⏳ _Downloading media file into RAM Buffer..._");
+      
       
       let mediaBuffer;
       try {
@@ -88,7 +88,7 @@ Sparky(
       const mimetype = m.quoted.mime || (m.quoted.mtype === "audioMessage" ? "audio/mp3" : "video/mp4");
 
       // 2. Audio Tracking (AudD API)
-      await sendMsg("🔍 _Identifying the song audio track..._");
+    
       
       let songData = null;
       for (let i = 0; i < API_KEYS.length; i++) {
@@ -148,7 +148,7 @@ Sparky(
       }
 
       // 4. YouTube MP3 Download (WhiteShadow YTMP3 API)
-      await sendMsg("📥 _Extracting 320kbps High-Quality Audio stream from YouTube..._");
+     
       console.log(`[SADEW-MD BOT V2] Fetching download link for: ${youtubeUrl}`);
 
       let audioDownloadUrl = null;
