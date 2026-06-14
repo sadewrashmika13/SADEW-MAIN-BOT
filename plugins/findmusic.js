@@ -7,32 +7,53 @@ Sparky({
     alias: ["shazam", "whatsong"],
     category: "tools",
     desc: "Finds the song name from a replied video or audio clip.",
-    async start(client, message, { quoted, mime, download }) {
+    async start(client, message, res) {
+        // Sparky Framework එකේ Chat JID එක නිවැරදිව හඳුනා ගැනීම
+        const jid = message.jid || message.from || message.chat || (message.key && message.key.remoteJid);
+        
+        console.log("=== FIND COMMAND TRIGGERED ===");
+        console.log("Target JID:", jid);
+        
         try {
-            // 1. වීඩියෝවකට හෝ ඕඩියෝවකට රිප්ලයි කරලාද බලනවා
-            if (!quoted || (!mime.includes("video") && !mime.includes("audio"))) {
-                return await client.sendMessage(message.chat, { 
+            // Framework එක අනුව quoted, mime සහ download ක්‍රම කිහිපයකට ආරක්ෂිතව ලබා ගැනීම
+            const quoted = res?.quoted || message.quoted || message.reply_message;
+            const mimetype = res?.mime || message.mime || (quoted && (quoted.mime || quoted.mimetype || quoted.msg?.mimetype)) || "";
+            const downloadFunc = res?.download || message.download || (quoted && quoted.download);
+
+            console.log("Detected Mimetype:", mimetype);
+            console.log("Quoted message found:", !!quoted);
+
+            // 1. වීඩියෝවකට හෝ ඕඩියෝවකට ਰිප්ලයි කරලාද බලනවා
+            if (!quoted || !mimetype || (!mimetype.includes("video") && !mimetype.includes("audio"))) {
+                return await client.sendMessage(jid, { 
                     text: "❌ කරුණාකර සින්දුව සෙවීමට අවශ්‍ය වීඩියෝවකට (Video) හෝ ඕඩියෝවකට (Audio) රිප්ලයි කර `.find` ලෙස ටයිප් කරන්න." 
                 });
             }
 
-            // වැඩේ පටන් ගත්තා කියලා පණිවිඩයක් දානවා
-            await client.sendMessage(message.chat, { 
+            // වැඩේ පටන් ගත්තා කියලා චැට් එකට මැසේජ් එකක් යවනවා
+            await client.sendMessage(jid, { 
                 text: "🔍 `sadew md` වීඩියෝවේ සින්දුව පරීක්ෂා කරමින් පවතී... කරුණාකර රැඳී සිටින්න..." 
             });
 
-            // 2. මීඩියා එක බෆර් එකකට ඩවුන්ලෝඩ් කරගන්නවා
-            const mediaBuffer = await download();
+            // 2. මීඩියා එක බෆර් එකට ඩවුන්ලෝඩ් කරගන්නවා
+            if (!downloadFunc) {
+                return await client.sendMessage(jid, { text: "❌ මීඩියා බෆර් එක ලබා ගැනීමට නොහැකි විය. (Download function error)" });
+            }
+            
+            // Function එකක්ද නැද්ද යන්න පරික්ෂා කර ඩවුන්ලෝඩ් කිරීම
+            const mediaBuffer = typeof downloadFunc === 'function' ? await downloadFunc() : await res.download();
+            console.log("Media Buffer Downloaded. Size:", mediaBuffer.length, "bytes");
 
-            // 3. AudD API එකට අවශ්‍ය ෆෝම් ඩේටා ටික
+            // 3. AudD API එකට අවශ්‍ය ෆෝම් ඩේටා ලෑස්ති කිරීම
             const form = new FormData();
-            // ඔයා ලබා දුන් API Key එක මෙතැන ඇතුළත් කර ඇත
-            const apiKey = "8d48a5d0f1c1f94d56cde6edf1b2bf00"; 
+            const apiKey = "8d48a5d0f1c1f94d56cde6edf1b2bf00"; // ඔයාගේ API Key එක
             
             form.append("api_token", apiKey);
-            form.append("file", mediaBuffer, { filename: "media.mp4", contentType: mime });
-            form.append("return", "apple_music,spotify"); // අමතර විස්තර සඳහා
+            form.append("file", mediaBuffer, { filename: "media.mp4", contentType: mimetype });
+            form.append("return", "apple_music,spotify"); 
 
+            console.log("Sending data to AudD API...");
+            
             // 4. API රික්වෙස්ට් එක යැවීම
             const response = await axios.post("https://api.audd.io/", form, {
                 headers: {
@@ -43,8 +64,9 @@ Sparky({
             });
 
             const resData = response.data;
+            console.log("AudD API Response Status:", resData.status);
 
-            // 5. ප්‍රතිඵල පෙන්වීම
+            // 5. ප්‍රතිඵල පරිශීලකයාට යැවීම
             if (resData.status === "success" && resData.result) {
                 const song = resData.result;
                 
@@ -60,24 +82,29 @@ Sparky({
                     resultMsg += `*📅 නිකුත් වූ දිනය:* ${song.release_date}\n`;
                 }
 
-                // Spotify හෝ Apple Music ලින්ක් එකක් තිබේ නම් එය පෙන්වීමට
+                // Spotify හෝ Apple Music ලින්ක් එකක් තිබේ නම් ලබා ගැනීම
                 const link = song.spotify ? song.spotify.external_urls.spotify : (song.song_link || "");
                 if (link) {
                     resultMsg += `\n*🎧 Listen Now:* ${link}`;
                 }
 
-                return await client.sendMessage(message.chat, { text: resultMsg });
+                return await client.sendMessage(jid, { text: resultMsg });
             } else {
-                return await client.sendMessage(message.chat, { 
+                return await client.sendMessage(jid, { 
                     text: "❌ කණගාටුයි, මේ වීඩියෝවේ ඇති සින්දුව හොයාගන්න බැරි වුණා. සින්දුවේ ශබ්දය පැහැදිලිදැයි නැවත බලන්න." 
                 });
             }
 
         } catch (error) {
-            console.error("Error in .find command:", error);
-            return await client.sendMessage(message.chat, { 
-                text: "⚠️ සින්දුව සෙවීමේදී දෝෂයක් සිදු වුණා. කරුණාකර පසුව උත්සාහ කරන්න." 
-            });
+            console.error("CRITICAL ERROR IN .FIND COMMAND:", error);
+            // එරර් එකක් ආවොත් ඒකත් චැට් එකට මැසේජ් එකක් විදිහට දානවා බලාගන්න
+            try {
+                await client.sendMessage(jid, { 
+                    text: `⚠️ සින්දුව සෙවීමේදී දෝෂයක් සිදු වුණා:\n\`\`\`${error.message}\`\`\`` 
+                });
+            } catch (sendErr) {
+                console.error("Failed to send error message to WhatsApp:", sendErr);
+            }
         }
     }
 });
