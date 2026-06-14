@@ -16,26 +16,22 @@ function getQuery(args) {
     return "";
 }
 
-// YouTube video duration get කරන්න (තත්පර වලින්)
-async function getVideoDuration(url) {
-    const info = await ytdl.getInfo(url);
-    return parseInt(info.videoDetails.lengthSeconds);
-}
-
 Sparky({
     name: "aio",
     alias: ["alldl", "multidownload"],
     category: "download",
     fromMe: isPublic,
-    desc: "🌍 Social media වීඩියෝ/ඕඩියෝ ඩවුන්ලෝඩ් (TikTok, YT, IG, FB, Twitter, etc.)"
+    desc: "🌐 Download video/audio from YouTube, TikTok, Instagram, Twitter, Facebook, etc."
 }, async ({ client, m, args }) => {
     let url = getQuery(args);
     if (!url) {
         return m.reply(`🌐 *All-in-One Downloader*
 
 *Usage:* ${m.prefix}aio <link>
-*Example:* ${m.prefix}aio https://www.tiktok.com/@user/video/123
-*Example:* ${m.prefix}aio https://youtu.be/xxxxx`);
+*Examples:*
+${m.prefix}aio https://www.tiktok.com/@user/video/123456789
+${m.prefix}aio https://youtu.be/xxxxx
+${m.prefix}aio https://www.instagram.com/p/xxxxx`);
     }
     if (!url.startsWith("http")) url = "https://" + url;
 
@@ -44,49 +40,73 @@ Sparky({
     await m.reply(`🔍 *Processing:* ${url}`);
 
     try {
-        // ---------- YouTube Handling ----------
+        // ---------- YOUTUBE ----------
         if (url.includes("youtube.com") || url.includes("youtu.be")) {
-            // Get video info
-            const info = await ytdl.getInfo(url);
-            const title = info.videoDetails.title;
-            const durationSec = parseInt(info.videoDetails.lengthSeconds);
-            const isLong = durationSec > 300; // 5m ට වැඩිද?
+            try {
+                // Get video info
+                const info = await ytdl.getInfo(url);
+                const title = info.videoDetails.title;
+                const durationSec = parseInt(info.videoDetails.lengthSeconds);
+                const isLong = durationSec > 300; // 5 minutes
 
-            // Quality තීරණය: දිග 5m ට අඩු -> 720p, වැඩි -> 480p
-            const targetQuality = isLong ? "lowest" : "137"; // 137 = 1080p, but we'll pick 720p
-            // Better: use ytdl with filter
-            const format = ytdl.chooseFormat(info.formats, { quality: isLong ? "lowest" : "highest", filter: "videoandaudio" });
-            if (!format) throw new Error("No suitable format");
+                // Choose best format (video+audio combined)
+                let format = ytdl.chooseFormat(info.formats, {
+                    quality: isLong ? 'lowest' : 'highest',
+                    filter: 'videoandaudio'
+                });
+                if (!format) {
+                    // Fallback: video only (will still work)
+                    format = ytdl.chooseFormat(info.formats, {
+                        quality: isLong ? 'lowest' : 'highest',
+                        filter: 'video'
+                    });
+                }
+                if (!format) throw new Error('No suitable format found');
 
-            await m.reply(`📹 *${title}* (${isLong ? "480p" : "720p"} | ${Math.round(durationSec/60)}m)\n⬇️ Downloading...`);
+                const qualityLabel = isLong ? "480p (30fps)" : "720p (30fps)";
+                await m.reply(`📹 *${title}* (${qualityLabel} | ~${Math.round(durationSec/60)} min)\n⬇️ Downloading...`);
 
-            // Download as stream -> buffer
-            const stream = ytdl(url, { quality: isLong ? "lowest" : "highest", filter: "videoandaudio" });
-            const chunks = [];
-            for await (const chunk of stream) chunks.push(chunk);
-            const buffer = Buffer.concat(chunks);
-            const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-            const fileName = `${title.replace(/[^a-z0-9]/gi, '_')}.mp4`;
-            const caption = `🎬 *${title}*\n🎚️ Quality: ${isLong ? "480p (30fps)" : "720p (30fps)"}\n📦 Size: ${fileSizeMB} MB\n\n> *YouTube Downloader*`;
+                // Download with proper headers and buffer
+                const stream = ytdl(url, {
+                    format: format,
+                    requestOptions: {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                        }
+                    },
+                    highWaterMark: 1 << 25, // 32MB buffer
+                });
 
-            await client.sendMessage(m.jid, {
-                video: buffer,
-                caption: caption,
-                mimetype: "video/mp4"
-            }, { quoted: m });
+                const chunks = [];
+                for await (const chunk of stream) chunks.push(chunk);
+                const buffer = Buffer.concat(chunks);
+                const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+                const fileName = `${title.replace(/[^a-z0-9]/gi, '_')}.mp4`;
+                const caption = `🎬 *YouTube*\n📹 *${title}*\n🎚️ *Quality:* ${qualityLabel}\n📦 *Size:* ${fileSizeMB} MB\n\n> *Downloaded with ytdl-core*`;
 
-            await m.react("✅");
-            await m.reply(`✅ *Download complete!* (${fileSizeMB} MB)`);
-            return;
+                await client.sendMessage(m.jid, {
+                    video: buffer,
+                    caption: caption,
+                    mimetype: "video/mp4"
+                }, { quoted: m });
+
+                await m.react("✅");
+                await m.reply(`✅ *Download complete!* (${fileSizeMB} MB)`);
+                return;
+            } catch (ytError) {
+                console.error("YouTube error:", ytError);
+                throw new Error(`YouTube download failed: ${ytError.message.substring(0, 100)}`);
+            }
         }
 
-        // ---------- Other platforms (via API) ----------
+        // ---------- ALL OTHER PLATFORMS (via API) ----------
         const apiUrl = `${API_BASE}?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
         const response = await axios.get(apiUrl, { timeout: 20000 });
         const data = response.data;
 
         if (!data || data.Status !== true || data.Code !== 200) {
-            throw new Error(data?.Error || "API error");
+            throw new Error(data?.Error || "API error (unsupported platform or invalid link)");
         }
 
         const result = data.Result;
@@ -94,7 +114,7 @@ Sparky({
             throw new Error("No media found");
         }
 
-        // Pick best video (watermark-free if available)
+        // Select best video (prioritise no_watermark / hd_no_watermark)
         let bestVideo = null;
         let bestAudio = null;
         for (const media of result.medias) {
@@ -108,14 +128,14 @@ Sparky({
             }
         }
 
-        if (!bestVideo) throw new Error("No video URL");
+        if (!bestVideo) throw new Error("No video URL found");
 
         const videoUrl = bestVideo.url;
         const quality = bestVideo.quality || "HD";
         const title = result.title || "Media";
         const author = result.author || result.unique_id || "Unknown";
 
-        await m.reply(`✅ *${title}* by @${author}\n🎚️ Quality: ${quality}\n⬇️ Downloading...`);
+        await m.reply(`✅ *${title}* by @${author}\n🎚️ *Quality:* ${quality}\n⬇️ Downloading video...`);
 
         const videoRes = await axios.get(videoUrl, {
             responseType: 'arraybuffer',
@@ -125,8 +145,7 @@ Sparky({
         });
         const buffer = Buffer.from(videoRes.data);
         const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-        const fileName = `${title.replace(/[^a-z0-9]/gi, '_')}.mp4`;
-        const caption = `🌐 *${title}*\n👤 *${author}*\n🎚️ Quality: ${quality}\n📦 Size: ${fileSizeMB} MB\n\n> *AIO Downloader*`;
+        const caption = `🌐 *${title}*\n👤 *Author:* ${author}\n🎚️ *Quality:* ${quality}\n📦 *Size:* ${fileSizeMB} MB\n\n> *AIO Downloader*`;
 
         await client.sendMessage(m.jid, {
             video: buffer,
@@ -134,7 +153,7 @@ Sparky({
             mimetype: "video/mp4"
         }, { quoted: m });
 
-        // Optional: send audio separately (TikTok audio)
+        // Send audio if available (e.g., TikTok original sound)
         if (bestAudio && bestAudio.url) {
             const audioRes = await axios.get(bestAudio.url, { responseType: 'arraybuffer' });
             const audioBuffer = Buffer.from(audioRes.data);
@@ -152,10 +171,10 @@ Sparky({
         console.error("AIO error:", error);
         await m.react("❌");
         let errorMsg = `❌ *Download failed*\n\n`;
-        if (error.message.includes("No media")) {
-            errorMsg += `Unsupported link or platform.\nSupported: TikTok, YouTube, Instagram, Twitter, Facebook, Reddit, Pinterest, etc.`;
-        } else if (error.message.includes("403")) {
-            errorMsg += `YouTube download blocked by Google. Try using a different link or later.`;
+        if (error.message.includes("YouTube")) {
+            errorMsg += `YouTube error: ${error.message}\nTry a different video or use another source.`;
+        } else if (error.message.includes("API error") || error.message.includes("No media")) {
+            errorMsg += `Unsupported link or platform.\nSupported: YouTube, TikTok, Instagram, Twitter, Facebook, Reddit, Pinterest, etc.`;
         } else {
             errorMsg += `Error: ${error.message.substring(0, 150)}`;
         }
