@@ -1,261 +1,159 @@
-const { Sparky, isPublic, YtInfo, yts, yta, ytv } = require("../lib");
-const { getString, isUrl } = require("./pluginsCore");
+const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
-const { spawn } = require("child_process");
 
-const lang = getString("download") || {};
-const ffmpegBin = "ffmpeg";
+// 🌐 WhiteShadow YT APIs & Token
+const API_TOKEN = "VK4fry";
+const YT_SEARCH_API = "https://whiteshadow-x-api.onrender.com/api/search/yt";
+const YT_DOWNLOAD_API = "https://whiteshadow-x-api.onrender.com/api/download/ytmp3";
 
-function sanitizeFileName(name) {
-    return String(name || "music")
-        .replace(/[\\/:*?"<>|]/g, "_")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 80);
+/**
+ * 📱 යූටියුබ් මොබයිල් (youtu.be, shorts) සහ PC ලින්ක්ස් නිවැරදිව වෙන්කර හඳුනාගන්නා ශ්‍රිතය
+ */
+function extractYoutubeUrl(text) {
+    const regex = /(https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[^\s?#]+)/i;
+    const match = String(text || "").match(regex);
+    return match ? match[0].trim() : null;
 }
 
-function durationToSeconds(duration) {
-    const parts = String(duration || "").split(":").map(Number);
-    if (parts.some(isNaN)) return 0;
-    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    if (parts.length === 2) return parts[0] * 60 + parts[1];
-    return parts[0] || 0;
-}
+/**
+ * 🎶 සින්දු සෙවීම සහ 320kbps MP3 ලබාදීම සිදුකරන ප්‍රධාන සිස්ටම් එක
+ */
+async function coreAudioDownloader({ m, client, args }) {
+    // 🛡️ Fail-Safe Text Message Sender
+    const sendMsg = async (text) => {
+        try {
+            if (typeof m.reply === "function") {
+                await m.reply(text);
+            } else {
+                await client.sendMessage(m.jid, { text }, { quoted: m });
+            }
+        } catch (e) {
+            console.error("[SADEW-MD MUSIC] Text reply failed:", e.message);
+            try {
+                await client.sendMessage(m.jid, { text });
+            } catch (err) {
+                console.error("[SADEW-MD MUSIC] Completely failed to send text:", err.message);
+            }
+        }
+    };
 
-function pickBestSong(results) {
-    if (!Array.isArray(results) || !results.length) return null;
-
-    return results.find((item) => {
-        const seconds = durationToSeconds(item.duration);
-        return seconds > 0 && seconds <= 15 * 60;
-    }) || results[0];
-}
-
-async function downloadToBuffer(url) {
-    const res = await axios.get(url, {
-        responseType: "arraybuffer",
-        timeout: 120000,
-        maxRedirects: 5,
-        headers: { "User-Agent": "Mozilla/5.0" },
-        maxContentLength: 80 * 1024 * 1024,
-        maxBodyLength: 80 * 1024 * 1024
-    });
-
-    return Buffer.from(res.data);
-}
-
-function convertToPhoneMp3(inputBuffer) {
-    return new Promise((resolve, reject) => {
-        const args = [
-            "-hide_banner",
-            "-loglevel", "error",
-            "-i", "pipe:0",
-            "-vn",
-            "-map_metadata", "-1",
-            "-ac", "2",
-            "-ar", "44100",
-            "-c:a", "libmp3lame",
-            "-b:a", "128k",
-            "-id3v2_version", "3",
-            "-f", "mp3",
-            "pipe:1"
-        ];
-
-        const ffmpeg = spawn(ffmpegBin, args, {
-            stdio: ["pipe", "pipe", "pipe"]
-        });
-
-        const outputChunks = [];
-        const errorChunks = [];
-
-        const timer = setTimeout(() => {
-            ffmpeg.kill("SIGKILL");
-            reject(new Error("MP3 convert timeout වුණා."));
-        }, 180000);
-
-        ffmpeg.stdout.on("data", (chunk) => outputChunks.push(chunk));
-        ffmpeg.stderr.on("data", (chunk) => errorChunks.push(chunk));
-
-        ffmpeg.on("error", (err) => {
-            clearTimeout(timer);
-            reject(err.code === "ENOENT" ? new Error("FFmpeg install කරලා නෑ.") : err);
-        });
-
-        ffmpeg.on("close", (code) => {
-            clearTimeout(timer);
-
-            const output = Buffer.concat(outputChunks);
-            const errorText = Buffer.concat(errorChunks).toString("utf8");
-
-            if (code !== 0) return reject(new Error(errorText || `FFmpeg failed: ${code}`));
-            if (!output || output.length < 1000) return reject(new Error("MP3 output empty වුණා."));
-
-            resolve(output);
-        });
-
-        ffmpeg.stdin.end(inputBuffer);
-    });
-}
-
-async function sendPhoneSupportedMp3(client, m, song) {
-    const rawAudioUrl = await yta(song.url);
-    if (!rawAudioUrl) throw new Error("Audio download link එක ලැබුණේ නෑ.");
-
-    const rawBuffer = await downloadToBuffer(rawAudioUrl);
-    if (!rawBuffer || rawBuffer.length < 1000) throw new Error("Audio download failed.");
-
-    const mp3Buffer = await convertToPhoneMp3(rawBuffer);
-    const fileName = `${sanitizeFileName(song.title)}.mp3`;
-
-    await client.sendMessage(m.jid, {
-        audio: mp3Buffer,
-        mimetype: "audio/mpeg",
-        fileName,
-        ptt: false
-    }, { quoted: m });
-}
-
-Sparky({
-    name: "yts",
-    fromMe: isPublic,
-    category: "youtube",
-    desc: "Search in YouTube"
-}, async ({ m, client, args }) => {
     try {
-        if (!args) return await m.reply(lang.NEED_Q || "Need a Query");
+        let textInput = Array.isArray(args) ? args.join(" ").trim() : String(args || "").trim();
+        textInput = textInput || m.quoted?.text || "";
 
-        if (await isUrl(args)) {
-            const yt = await YtInfo(args);
-            if (!yt) return await m.reply("❌ YouTube info ගන්න බැරි වුණා.");
-
-            return await client.sendMessage(m.jid, {
-                image: { url: yt.thumbnail },
-                caption:
-                    `*Title:* ${yt.title}\n` +
-                    `*Author:* ${yt.author}\n` +
-                    `*URL:* ${args}\n` +
-                    `*Video ID:* ${yt.videoId}`
-            }, { quoted: m });
+        if (!textInput) {
+            return await sendMsg("🎵 කරුණාකර සින්දුවක නමක් හෝ YouTube ලින්ක් එකක් (PC/Mobile) ලබා දෙන්න.\n\n💡 උදා: `.music master sir` හෝ `.music <link>`");
         }
 
-        const videos = await yts(args);
+        try { if (typeof m.react === "function") await m.react("🔎"); } catch {}
 
-        if (!videos || !videos.length) {
-            return await m.reply("❌ Result එකක් හමු වුණේ නෑ.");
+        // 1. පරිශීලකයා දුන්නේ ලින්ක් එකක්ද නැත්නම් නමක්ද කියා පරික්ෂා කිරිම
+        const checkedUrl = extractYoutubeUrl(textInput);
+        let youtubeUrl = null;
+        let songTitle = "Sadew-MD Audio";
+
+        if (checkedUrl) {
+            // ඇතුළත් කළේ කෙලින්ම YouTube ලින්ක් එකක් නම්
+            youtubeUrl = checkedUrl;
+            console.log("[SADEW-MD MUSIC] Direct YouTube Link Detected:", youtubeUrl);
+            await sendMsg("🔗 _YouTube direct link detected. Fetching data from server..._");
+        } else {
+            // ඇතුළත් කළේ සින්දුවක නමක් නම් (WhiteShadow YT Search API)
+            await sendMsg(`🔍 _Searching YouTube for: "${textInput}"..._`);
+            console.log("[SADEW-MD MUSIC] Searching YT for name:", textInput);
+
+            try {
+                const searchResponse = await axios.get(`${YT_SEARCH_API}?q=${encodeURIComponent(textInput)}&apitoken=${API_TOKEN}`, { timeout: 20000 });
+                
+                if (searchResponse.data?.success && searchResponse.data?.result?.length > 0) {
+                    const bestResult = searchResponse.data.result[0];
+                    youtubeUrl = bestResult.url;
+                    songTitle = bestResult.title || "YouTube Audio";
+                    console.log("[SADEW-MD MUSIC] Search success. Found URL:", youtubeUrl);
+                }
+            } catch (searchErr) {
+                console.error("[SADEW-MD MUSIC] YT Search API Error:", searchErr.message);
+            }
         }
 
-        const result = videos.slice(0, 10).map((video, i) => {
-            return `${i + 1}. *${video.title}*\n⏱️ ${video.duration || "Unknown"}\n🔗 ${video.url}`;
-        });
-
-        return await m.reply(`_*Result Of ${args} 🔍*_\n\n` + result.join("\n\n"));
-    } catch (err) {
-        console.log("YTS error:", err);
-        await m.reply("❌ YTS error:\n" + err.message);
-    }
-});
-
-Sparky({
-    name: "ytv",
-    fromMe: isPublic,
-    category: "youtube",
-    desc: "YouTube video download"
-}, async ({ m, client, args }) => {
-    try {
-        args = args || m.quoted?.text;
-
-        if (!args) return await m.reply(lang.NEED_URL || "Need a YouTube URL");
-        if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK || "Invalid link");
-
-        await m.react("⬇️");
-
-        const url = await ytv(args);
-
-        await m.sendMsg(m.jid, url, { quoted: m }, "video");
-
-        await m.react("✅");
-    } catch (error) {
-        console.log("YTV error:", error);
-        await m.react("❌");
-        await m.reply("❌ YTV error:\n" + error.message);
-    }
-});
-
-Sparky({
-    name: "yta",
-    fromMe: isPublic,
-    category: "youtube",
-    desc: "YouTube audio download"
-}, async ({ m, client, args }) => {
-    try {
-        args = args || m.quoted?.text;
-
-        if (!args) return await m.reply(lang.NEED_URL || "Need a YouTube URL");
-        if (!await isUrl(args)) return await m.reply(lang.INVALID_LINK || "Invalid link");
-
-        await m.react("⬇️");
-
-        const song = {
-            title: "YouTube Audio",
-            url: args
-        };
-
-        await sendPhoneSupportedMp3(client, m, song);
-
-        await m.react("✅");
-    } catch (error) {
-        console.log("YTA error:", error);
-        await m.react("❌");
-        await m.reply("❌ YTA error:\n" + error.message);
-    }
-});
-
-async function songSearchHandler({ m, client, args }) {
-    try {
-        args = args || m.quoted?.text;
-
-        if (!args) {
-            return await m.reply("🎵 Song name එකක් දෙන්න.\n\nඋදා: .music mithaya myam");
+        // යූටියුබ් ලින්ක් එකක් හොයාගන්න බැරි වුණොත්
+        if (!youtubeUrl) {
+            try { if (typeof m.react === "function") await m.react("❌"); } catch {}
+            return await sendMsg("❌ *Error:* සින්දුව හෝ වීඩියෝව සොයා ගැනීමට නොහැකි විය. කරුණාකර නම නිවැරදිව ටයිප් කරන්න.");
         }
 
-        await m.react("🔎");
+        // 2. 320kbps MP3 ලින්ක් එක ලබාගැනීම (WhiteShadow YTMP3 API)
+        await sendMsg("📥 _Extracting 320kbps High-Quality MP3 stream..._");
+        console.log(`[SADEW-MD MUSIC] Triggering Downloader for: ${youtubeUrl}`);
 
-        const results = await yts(args);
-        const song = pickBestSong(results);
+        let audioDownloadUrl = null;
+        let finalTitle = songTitle;
 
-        if (!song || !song.url) {
-            await m.react("❌");
-            return await m.reply("❌ Song එක හොයාගන්න බැරි වුණා.");
+        try {
+            const downloadResponse = await axios.get(`${YT_DOWNLOAD_API}?url=${encodeURIComponent(youtubeUrl)}&quality=320&apitoken=${API_TOKEN}`, { timeout: 40000 });
+            
+            if (downloadResponse.data?.success && downloadResponse.data?.result?.download_url) {
+                audioDownloadUrl = downloadResponse.data.result.download_url;
+                if (downloadResponse.data.result.title) {
+                    finalTitle = downloadResponse.data.result.title;
+                }
+                console.log("[SADEW-MD MUSIC] API Download URL Success:", audioDownloadUrl);
+            }
+        } catch (dlErr) {
+            console.error("[SADEW-MD MUSIC] YT Download API Error:", dlErr.message);
         }
 
-        await m.reply(
-            `🎧 *${song.title}*\n` +
-            `⏱️ ${song.duration || "Unknown"}\n\n` +
-            `_Preparing phone supported MP3..._`
+        if (!audioDownloadUrl) {
+            try { if (typeof m.react === "function") await m.react("❌"); } catch {}
+            return await sendMsg("❌ *Error:* සේවාදායකයේ බිඳවැටීමක් හේතුවෙන් 320kbps ඕඩියෝ එක ලබා ගැනීමට නොහැකි විය.");
+        }
+
+        try { if (typeof m.react === "function") await m.react("📥"); } catch {}
+
+        // 3. WhatsApp Audio පණිවිඩයක් ලෙස ජංගම දුරකථනයට යැවීම
+        const cleanFileName = finalTitle.replace(/[\\/:*?"<>|]/g, "_").slice(0, 60) + ".mp3";
+        
+        await sendMsg(`✨ *Sadew-MD Music System* ✨\n\n📌 *Title:* ${finalTitle}\n💿 *Quality:* 320kbps Ultra-HQ\n🚀 *Status:* Mobile-Optimized`);
+
+        await client.sendMessage(
+            m.jid,
+            {
+                audio: { url: audioDownloadUrl },
+                mimetype: "audio/mpeg", // මොබයිල් ඩිවයිස් වල සුපිරියට වැඩ කරන්න
+                ptt: false,             // සින්දුවක් විදිහටම යන්න
+                fileName: cleanFileName
+            },
+            { quoted: m }
         );
 
-        await m.react("⬇️");
+        try { if (typeof m.react === "function") await m.react("✅"); } catch {}
 
-        await sendPhoneSupportedMp3(client, m, song);
-
-        await m.react("✅");
-    } catch (error) {
-        console.log("Song/Music error:", error);
-        await m.react("❌");
-        await m.reply("❌ Song/Music error:\n" + error.message);
+    } catch (globalError) {
+        console.error("[SADEW-MD MUSIC] CRITICAL GLOBAL ERROR:", globalError);
+        try { if (typeof m.react === "function") await m.react("❌"); } catch {}
+        await sendMsg(`❌ *Sadew-MD Music Internal Error:* ${globalError.message}`);
     }
 }
+
+// 🎧 Commands ලියාපදිංචි කිරීම (ඔයා ඉල්ලපු ඔක්කොම එකම සුපිරි ක්‍රමයට වැඩ කරයි)
 
 Sparky({
     name: "song",
     fromMe: isPublic,
     category: "youtube",
-    desc: "Song name එකෙන් phone supported MP3 audio එකක් send කරන්න"
-}, songSearchHandler);
+    desc: "Search and download 320kbps MP3 audio via name or link."
+}, coreAudioDownloader);
 
 Sparky({
     name: "music",
     fromMe: isPublic,
     category: "youtube",
-    desc: "Song name එකෙන් phone supported MP3 audio එකක් send කරන්න"
-}, songSearchHandler);
+    desc: "Search and download 320kbps MP3 audio via name or link."
+}, coreAudioDownloader);
+
+Sparky({
+    name: "yta",
+    fromMe: isPublic,
+    category: "youtube",
+    desc: "Download YouTube audio via link (Supports PC and Mobile app links)."
+}, coreAudioDownloader);
