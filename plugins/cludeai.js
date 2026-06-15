@@ -2,7 +2,7 @@ const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
 // 🔑 WolfApis Claude AI එක සඳහා වන API Key එක (කැමති නම් පස්සේ වෙනස් කරගන්න පුළුවන්)
-const CLAUDE_API_KEY = "wxa_d_test";
+const CLAUDE_API_KEY = "wxa_f_4e840b5e42";
 
 Sparky(
   {
