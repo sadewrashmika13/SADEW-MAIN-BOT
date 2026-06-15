@@ -1,7 +1,7 @@
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
-// 🔑 ඔයා ලබාදුන් නිවැරදි WhiteShadow API Token එක
+// 🔑 WhiteShadow API Token
 const API_TOKEN = "VK4fry";
 
 Sparky(
@@ -14,7 +14,6 @@ Sparky(
   },
   async ({ m, client, args }) => {
     try {
-      // 🛠️ args එක String එකක්ද Array එකක්ද කියා පරික්ෂා කර සර්ච් කරන වචනය ගැනීම
       let textInput = "";
       if (typeof args === "string") {
           textInput = args.trim();
@@ -28,10 +27,9 @@ Sparky(
         return await m.reply("❌ කරුණාකර සෙවිය යුතු දේ ඇතුළත් කරන්න.\n\n💡 උදා: `.google Sri Lanka`");
       }
 
-      // බොටා වැඩ කරන බව පෙන්වීමට සර්ච් ඉමෝජි එකක් දාමු
       try { if (typeof m.react === "function") await m.react("🔍"); } catch {}
 
-      // 🌐 1. Text Results ලබාගැනීම (WhiteShadow API)
+      // 🌐 1. Text Results ලබාගැනීම (WhiteShadow Google API)
       const targetUrl = `https://whiteshadow-x-api.onrender.com/api/search/google?q=${encodeURIComponent(textInput)}&apitoken=${API_TOKEN}`;
       
       console.log("[SADEW-MD GOOGLE] Fetching search results...");
@@ -45,30 +43,28 @@ Sparky(
               return await m.reply("❌ ප්‍රතිඵල කිසිවක් හමු නොවීය.");
           }
 
-          // 📝 සයිට් වල නම සහ ලින්ක් ලස්සනට Format කරගැනීම
           let searchMessage = `🔍 *Google Search Results for:* _${textInput}_\n\n`;
-          
           results.forEach((item, index) => {
               searchMessage += `*${index + 1}. ${item.title}*\n`;
               searchMessage += `🔗 *Link:* ${item.link}\n`;
               searchMessage += `📝 _${item.snippet}_\n\n───────────────────\n\n`;
           });
 
-          // ලින්ක්ස් ටික මුලින්ම මැසේජ් එකක් විදිහට යවනවා
+          // ලින්ක්ස් ටික යැවීම
           await m.reply(searchMessage);
 
-          // 📸 2. Screenshot ලබාගැනීම (ඔයාගේ ss.js එකේ වැඩ කරන සුපිරි ලොජික් එකමයි)
+          // 📸 2. Screenshot ලබාගැනීම (CAPTCHA එක බයිපාස් කිරීමට Bing Search එක පාවිච්චි කර ඇත)
           try {
               if (typeof m.react === "function") await m.react("⏳");
               await client.sendPresenceUpdate('composing', m.jid);
 
-              // ලයිව් ගූගල් සර්ච් එකේ URL එක
-              const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(textInput)}`;
+              // 💡 මෙතනට Bing දැම්මම කැප්චා වදයක් නැතුව සර්ච් පේජ් එකේ ලස්සන ෆොටෝ එකක් එනවා!
+              const alternativeSearchUrl = `https://www.bing.com/search?q=${encodeURIComponent(textInput)}`;
               
-              // API 1: ScreenshotAPI.net (free tier, no key)
-              const screenshotUrl = `https://shot.screenshotapi.net/screenshot?url=${encodeURIComponent(googleSearchUrl)}&width=1280&height=800&output=image&file_type=png`;
+              // API 1: ScreenshotAPI.net
+              const screenshotUrl = `https://shot.screenshotapi.net/screenshot?url=${encodeURIComponent(alternativeSearchUrl)}&width=1280&height=800&output=image&file_type=png`;
               
-              console.log("[SADEW-MD GOOGLE] Fetching live screenshot from API 1...");
+              console.log("[SADEW-MD GOOGLE] Fetching live screenshot from Bing visual...");
               const ssResponse = await axios.get(screenshotUrl, {
                   responseType: 'arraybuffer',
                   timeout: 25000,
@@ -76,45 +72,39 @@ Sparky(
               });
 
               if (ssResponse.status === 200 && ssResponse.data && ssResponse.data.length > 1000) {
-                  const caption = `📸 *Google Search View for:* _${textInput}_\n🤖 SADEW-MINI\n⏱️ ${new Date().toLocaleString()}`;
+                  const caption = `📸 *Live Search View for:* _${textInput}_\n🤖 SADEW-MINI\n⏱️ ${new Date().toLocaleString()}`;
                   
-                  // m.chat වෙනුවට නිවැරදිව m.jid භාවිතා කර ඇත (JID Decode Error එක මෙතනින් ෆික්ස් වේ)
                   await client.sendMessage(m.jid, {
                       image: Buffer.from(ssResponse.data),
                       caption: caption
                   }, { quoted: m });
 
                   if (typeof m.react === "function") await m.react("✅");
-                  return; // සාර්ථක නම් මෙතනින් නවතී.
+                  return;
               } else {
-                  throw new Error("Empty or failed response from API 1");
+                  throw new Error("Failed response from API 1");
               }
 
           } catch (ssError) {
-              console.error("[SADEW-MD GOOGLE] Screenshot API 1 Failed. Trying Fallback API...", ssError.message);
+              console.error("[SADEW-MD GOOGLE] Screenshot API 1 Failed. Trying Fallback...", ssError.message);
               
-              // Fallback API 2: Microlink.io (කලින් එක ෆේල් වුණොත් මේකට මාරු වෙනවා)
+              // Fallback API 2: Microlink (Bing හරහාම)
               try {
-                  const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(textInput)}`;
-                  const fallbackUrl = `https://api.microlink.io/?url=${encodeURIComponent(googleSearchUrl)}&screenshot=true&meta=false`;
+                  const alternativeSearchUrl = `https://www.bing.com/search?q=${encodeURIComponent(textInput)}`;
+                  const fallbackUrl = `https://api.microlink.io/?url=${encodeURIComponent(alternativeSearchUrl)}&screenshot=true&meta=false`;
                   
                   const { data } = await axios.get(fallbackUrl, { timeout: 20000 });
                   const fallbackSsUrl = data?.data?.screenshot?.url;
                   
                   if (fallbackSsUrl) {
-                      const caption = `📸 *Google Search View for:* _${textInput}_\n🤖 SADEW-MINI (fallback)\n⏱️ ${new Date().toLocaleString()}`;
-                      
-                      await client.sendMessage(m.jid, { 
-                          image: { url: fallbackSsUrl }, 
-                          caption: caption 
-                      }, { quoted: m });
-                      
+                      const caption = `📸 *Live Search View for:* _${textInput}_\n🤖 SADEW-MINI (fallback)\n⏱️ ${new Date().toLocaleString()}`;
+                      await client.sendMessage(m.jid, { image: { url: fallbackSsUrl }, caption: caption }, { quoted: m });
                       if (typeof m.react === "function") await m.react("✅");
                   } else {
                       if (typeof m.react === "function") await m.react("❌");
                   }
               } catch (fallbackError) {
-                  console.error("[SADEW-MD GOOGLE] Fallback screenshot API also failed:", fallbackError.message);
+                  console.error("[SADEW-MD GOOGLE] Fallback failed too:", fallbackError.message);
                   if (typeof m.react === "function") await m.react("❌");
               }
           }
