@@ -57,28 +57,66 @@ Sparky(
           // ලින්ක්ස් ටික මුලින්ම මැසේජ් එකක් විදිහට යවනවා
           await m.reply(searchMessage);
 
-          // 📸 2. Screenshot ලබාගැනීම (Free Web Screenshot API එකක් හරහා)
-          // Google සර්ච් පේජ් එකේ ලයිව් පෙනුම ඉමේජ් එකක් විදිහට ගන්න thum.io පාවිච්චි කරනවා
-          const screenshotUrl = `https://image.thum.io/get/width/1280/crop/800/https://www.google.com/search?q=${encodeURIComponent(textInput)}`;
-
+          // 📸 2. Screenshot ලබාගැනීම (ඔයාගේ ss.js එකේ වැඩ කරන සුපිරි ලොජික් එකමයි)
           try {
-              // ස්ක්‍රීන්ෂොට් එක යවන බව පෙන්වන්න කැමරා ඉමෝජි එකක් දානවා
-              if (typeof m.react === "function") await m.react("📸");
+              if (typeof m.react === "function") await m.react("⏳");
+              await client.sendPresenceUpdate('composing', m.jid);
+
+              // ලයිව් ගූගල් සර්ච් එකේ URL එක
+              const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(textInput)}`;
               
-              await client.sendMessage(
-                  m.chat,
-                  { 
-                      image: { url: screenshotUrl }, 
-                      caption: `📸 *Google Search View for:* _${textInput}_` 
-                  },
-                  { quoted: m }
-              );
+              // API 1: ScreenshotAPI.net (free tier, no key)
+              const screenshotUrl = `https://shot.screenshotapi.net/screenshot?url=${encodeURIComponent(googleSearchUrl)}&width=1280&height=800&output=image&file_type=png`;
               
-              if (typeof m.react === "function") await m.react("✅");
-          } catch (imgError) {
-              console.error("[SADEW-MD GOOGLE] Screenshot Error:", imgError.message);
-              // ස්ක්‍රීන්ෂොට් එකේ මොකක් හරි අවුලක් වුණත් ලින්ක්ස් ටික ගිහින් තියෙන නිසා රිඇක්ෂන් එක විතරක් හරියක් දානවා
-              if (typeof m.react === "function") await m.react("✅");
+              console.log("[SADEW-MD GOOGLE] Fetching live screenshot from API 1...");
+              const ssResponse = await axios.get(screenshotUrl, {
+                  responseType: 'arraybuffer',
+                  timeout: 25000,
+                  headers: { 'User-Agent': 'Mozilla/5.0' }
+              });
+
+              if (ssResponse.status === 200 && ssResponse.data && ssResponse.data.length > 1000) {
+                  const caption = `📸 *Google Search View for:* _${textInput}_\n🤖 SADEW-MINI\n⏱️ ${new Date().toLocaleString()}`;
+                  
+                  // m.chat වෙනුවට නිවැරදිව m.jid භාවිතා කර ඇත (JID Decode Error එක මෙතනින් ෆික්ස් වේ)
+                  await client.sendMessage(m.jid, {
+                      image: Buffer.from(ssResponse.data),
+                      caption: caption
+                  }, { quoted: m });
+
+                  if (typeof m.react === "function") await m.react("✅");
+                  return; // සාර්ථක නම් මෙතනින් නවතී.
+              } else {
+                  throw new Error("Empty or failed response from API 1");
+              }
+
+          } catch (ssError) {
+              console.error("[SADEW-MD GOOGLE] Screenshot API 1 Failed. Trying Fallback API...", ssError.message);
+              
+              // Fallback API 2: Microlink.io (කලින් එක ෆේල් වුණොත් මේකට මාරු වෙනවා)
+              try {
+                  const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(textInput)}`;
+                  const fallbackUrl = `https://api.microlink.io/?url=${encodeURIComponent(googleSearchUrl)}&screenshot=true&meta=false`;
+                  
+                  const { data } = await axios.get(fallbackUrl, { timeout: 20000 });
+                  const fallbackSsUrl = data?.data?.screenshot?.url;
+                  
+                  if (fallbackSsUrl) {
+                      const caption = `📸 *Google Search View for:* _${textInput}_\n🤖 SADEW-MINI (fallback)\n⏱️ ${new Date().toLocaleString()}`;
+                      
+                      await client.sendMessage(m.jid, { 
+                          image: { url: fallbackSsUrl }, 
+                          caption: caption 
+                      }, { quoted: m });
+                      
+                      if (typeof m.react === "function") await m.react("✅");
+                  } else {
+                      if (typeof m.react === "function") await m.react("❌");
+                  }
+              } catch (fallbackError) {
+                  console.error("[SADEW-MD GOOGLE] Fallback screenshot API also failed:", fallbackError.message);
+                  if (typeof m.react === "function") await m.react("❌");
+              }
           }
 
       } else {
@@ -87,7 +125,7 @@ Sparky(
       }
 
     } catch (error) {
-      console.error("[SADEW-MD GOOGLE] Error:", error.message);
+      console.error("[SADEW-MD GOOGLE] Main Error:", error.message);
       try { if (typeof m.react === "function") await m.react("❌"); } catch {}
       return await m.reply(`❌ *Google Search Error:* ${error.message}`);
     }
