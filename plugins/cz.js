@@ -4,11 +4,9 @@ const axios = require("axios");
 
 if (!global.cinesubzSessions) global.cinesubzSessions = new Map();
 
-// බොට් බ්‍රෑන්ඩින්ග් විස්තර
 const BOT_NAME = "★👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥 ★";
 const POWERED_BY = "Powered by sadew rashmika";
 
-// Fake Quote එකක් සැකසීමට පොදු ෆන්ක්ෂන් එකක්
 function getMetaQuote() {
     return {
         key: { remoteJid: "status@broadcast", participant: "0@s.whatsapp.net", fromMe: false, id: "SADEW_X_MD" },
@@ -16,7 +14,6 @@ function getMetaQuote() {
     };
 }
 
-// පින්තූරයක් හෝ ටෙක්ස්ට් එකක් බිඳෙන්නේ නැතිව යැවීමට සකසන ලද සේෆ් ෆන්ක්ෂන් එකක්
 async function sendMediaOrText(client, jid, text, imageUrl, quoted) {
     if (imageUrl) {
         try {
@@ -122,7 +119,7 @@ for (let i = 1; i <= 10; i++) {
             }
 
             const selectedMovie = session.results[idx];
-            global.cinesubzSessions.delete(m.sender); // මූලික පියවර අයින් කරයි
+            global.cinesubzSessions.delete(m.sender);
             
             await fetchQualityOptions(client, m, selectedMovie);
         } catch (err) {
@@ -153,11 +150,12 @@ for (let j = 1; j <= 3; j++) {
             const finalUrl = session.linksMap[qualityKey];
             const movieTitle = session.movieTitle;
 
+            // සයිට් එකේ ඇත්තටම ලින්ක් එක නැත්නම් මැසේජ් එකක් දෙනවා සිලෙක්ට් කරන්න නොදී
             if (!finalUrl) {
-                return await m.reply(`❌ සමාවෙන්න, මෙම චිත්‍රපටය සඳහා ${qualityKey} සබැඳියක් API එකෙන් ලබා දිය නොහැක.`);
+                return await m.reply(`❌ සමාවෙන්න, මෙම චිත්‍රපටය සඳහා *${qualityKey}* Quality එක වෙබ් අඩවියේ ලබා දීමට නැත. කරුණාකර මෙනුවේ ඇති වෙනත් Quality එකක් තෝරන්න.`);
             }
 
-            global.cinesubzSessions.delete(m.sender); // සෙශන් එක ක්ලියර් කරයි
+            global.cinesubzSessions.delete(m.sender);
 
             await downloadAndSendMovie(client, m, finalUrl, qualityKey, movieTitle);
         } catch (err) {
@@ -193,6 +191,7 @@ async function fetchQualityOptions(client, m, selectedMovie) {
             "1080p": null
         };
 
+        // ඇත්තටම තියෙන ඒව විතරක් Map කරගන්නවා
         data.data.forEach(linkObj => {
             const qStr = (linkObj.quality || linkObj.resolution || "").toLowerCase();
             if (qStr.includes("480")) linksMap["480p"] = linkObj.link;
@@ -200,16 +199,30 @@ async function fetchQualityOptions(client, m, selectedMovie) {
             else if (qStr.includes("1080")) linksMap["1080p"] = linkObj.link;
         });
 
+        // කිසිම Specific Quality එකක් නැතිව එකම එක ලින්ක් එකක් විතරක් ආවොත් ඒක 720p වලට දානවා
         const fallbackLink = (data.data.find(v => v.is_direct_mp4) || data.data[0])?.link;
-        if (!linksMap["480p"]) linksMap["480p"] = fallbackLink;
-        if (!linksMap["720p"]) linksMap["720p"] = fallbackLink;
-        if (!linksMap["1080p"]) linksMap["1080p"] = fallbackLink;
+        if (!linksMap["480p"] && !linksMap["720p"] && !linksMap["1080p"]) {
+            linksMap["720p"] = fallbackLink;
+        }
 
-        let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
-        qualMsg += `1. *480p* (SD Quality) ➡️ 📥 *.m1*\n`;
-        qualMsg += `2. *720p* (HD Quality) ➡️ 📥 *.m2*\n`;
-        qualMsg += `3. *1080p* (Full HD Quality) ➡️ 📥 *.m3*\n\n`;
-        qualMsg += `📌 *බාගැනීමට කමාන්ඩ් එක දෙන්න:* .m1 , .m2 හෝ .m3`;
+        // මැසේජ් එක ඩයිනමික් ලෙස නිර්මාණය කිරීම (ඇති ඒවා පමණක් පෙන්වීමට)
+        let qualMsg = `🎬 *${title}*\n\n📥 *වෙබ් අඩවියේ ඇති බාගත කිරීම් විකල්ප:*\n\n`;
+        let availableCount = 0;
+
+        if (linksMap["480p"]) {
+            qualMsg += `🟢 *480p* (SD Quality) ➡️ 📥 *.m1*\n`;
+            availableCount++;
+        }
+        if (linksMap["720p"]) {
+            qualMsg += `🟢 *720p* (HD Quality) ➡️ 📥 *.m2*\n`;
+            availableCount++;
+        }
+        if (linksMap["1080p"]) {
+            qualMsg += `🟢 *1080p* (Full HD) ➡️ 📥 *.m3*\n`;
+            availableCount++;
+        }
+
+        qualMsg += `\n📌 *බාගැනීමට අදාළ කමාන්ඩ් එක දෙන්න.*`;
 
         await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
 
@@ -238,7 +251,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle)
         await m.react("⬇️");
         const metaQuote = getMetaQuote();
 
-        await client.sendMessage(m.jid, { text: `📥 *Downloading:* ${movieTitle}\n⚙️ *Quality:* ${qualityStr}\n\n_මෙය විශාල file එකක් බැවින්, WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක..._` }, { quoted: metaQuote });
+        await client.sendMessage(m.jid, { text: `📥 *Downloading:* ${movieTitle}\n⚙️ *Quality:* ${qualityStr}\n\n_මෙය WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක..._` }, { quoted: metaQuote });
         
         try {
             const headRes = await axios.head(finalUrl, { timeout: 10000 });
