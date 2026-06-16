@@ -1,283 +1,195 @@
-const { Sparky, isPublic } = require("../lib");
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const { Sparky } = require("../lib");
 const axios = require('axios');
 
-// ── Helper: message text ඕනෑම type එකෙන් ලබා ගැනීම ──────────────
-const getMsgText = (m) =>
-    m?.message?.conversation ||
-    m?.message?.extendedTextMessage?.text ||
-    m?.message?.buttonsResponseMessage?.selectedButtonId ||
-    m?.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    m?.message?.imageMessage?.caption ||
-    m?.message?.videoMessage?.caption ||
-    "";
-
-// ── Helper: reply කළ message ID ලබා ගැනීම ───────────────────────
-const getQuotedId = (m) =>
-    m?.message?.extendedTextMessage?.contextInfo?.stanzaId ||
-    m?.message?.buttonsResponseMessage?.contextInfo?.stanzaId ||
-    null;
-
-const BOT_NAME = "WHITESHADOW-MD";
-const makeQuote = (id) => ({
-    key: {
-        remoteJid  : "status@broadcast",
-        participant: "0@s.whatsapp.net",
-        fromMe     : false,
-        id,
-    },
-    message: {
-        contactMessage: {
-            displayName: BOT_NAME,
-            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${BOT_NAME}\nORG:Cinesubz\nTEL;waid=13135550002:+1 313 555 0002\nEND:VCARD`,
-        },
-    },
-});
-
-// =============================================
-// CINESUBZ SEARCH  →  .cz / .cinesubz
-// =============================================
-Sparky(
-    {
-        pattern: /(cz|cinesubz) ?(.*)/i,
-        fromMe: isPublic,
-        desc: "Cinesubz Movie Search",
-        type: "downloader",
-    },
-    async (msg, match) => {
-        const socket = msg.client;
-        const sender = msg.jid;
-        const query  = match[2]?.trim();
+// ==========================================
+// 1. MOVIE SEARCH COMMAND (.cinesubz / .cz)
+// ==========================================
+Sparky({
+    pattern: "cinesubz",
+    alias: ["cz", "movie"],
+    desc: "Search and get download links for movies from Cinesubz",
+    category: "download",
+    use: '.cinesubz <movie name>',
+    filename: __filename
+},
+async ({ m, client, args }) => {
+    try {
+        // args හරහා යූසර් සර්ච් කරපු නම ලබා ගැනීම
+        const query = args.join(" ");
 
         if (!query) {
-            return socket.sendMessage(sender,
-                { text: "🎬 *Movie නම දෙන්න!*\n_උදා: .cz batman_" },
-                { quoted: msg }
-            );
+            return await client.sendMessage(m.chat, { text: "🎬 *කරුණාකර Movie එකේ නම ලබා දෙන්න!*\n_උදා: .cz batman_" }, { quoted: m });
         }
 
-        try {
-            await socket.sendMessage(sender, { react: { text: "🔍", key: msg.key } });
+        // Fake Quote (Meta AI Style) - Sadew MD නම යොදා ඇත
+        const botName = "SADEW-MD";
+        const metaQuote = {
+            key: { remoteJid: "status@broadcast", participant: "0@s.whatsapp.net", fromMe: false, id: "META_AI_CZ" },
+            message: { contactMessage: { displayName: botName, vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${botName}\nORG:Cinesubz\nTEL;waid=13135550002:+1 313 555 0002\nEND:VCARD` } }
+        };
 
-            // 1. Search
-            const res  = await fetch(`https://cinesubz-api-cnw.vercel.app/api/search?q=${encodeURIComponent(query)}`);
-            const data = await res.json();
+        await client.sendMessage(m.chat, { react: { text: "🔍", key: m.key } });
 
-            if (!data.status || !data.data?.length) {
-                return socket.sendMessage(sender,
-                    { text: "❌ *ඒ නමින් Movies හමු නොවූණා.*" },
-                    { quoted: msg }
-                );
-            }
+        // Search API එකෙන් ඩේටා ෆෙච් කිරීම
+        const searchUrl = `https://cinesubz-api-cnw.vercel.app/api/search?q=${encodeURIComponent(query)}`;
+        const res = await axios.get(searchUrl);
+        const data = res.data;
 
-            const results = data.data.slice(0, 10);
+        if (!data.status || !data.data || data.data.length === 0) {
+            return await client.sendMessage(m.chat, { text: "❌ *සමාවෙන්න, එම නමින් Movies කිසිවක් හමුවූයේ නැත.*" }, { quoted: m });
+        }
 
-            // 2. List text
-            let listText = `🎬 *CINESUBZ SEARCH*\n🔍 *Keywords:* ${query}\n\n`;
-            results.forEach((mv, i) => {
-                listText += `*${i + 1}.* ${mv.title} _(${mv.year || "?"})_\n`;
-            });
-            listText += `\n_Reply with 1 - ${results.length} to select_`;
+        // මුල් ප්‍රතිපල 10 වෙන්කර ගැනීම
+        const topResults = data.data.slice(0, 10);
+        let listText = `🎬 *SADEW MD CINESUBZ MOVIE SEARCH*\n\n🔍 *සෙව්වේ:* ${query}\n👇 *ඔබට අවශ්‍ය ෆිල්ම් එකේ අංකය Reply කරන්න*\n\n`;
+        
+        topResults.forEach((mv, index) => {
+            listText += `*${index + 1}.* ${mv.title} (${mv.year || 'N/A'})\n`;
+        });
+        listText += `\n> **Reply with 1 - ${topResults.length}**`;
 
-            const listMsg = await socket.sendMessage(sender,
-                { text: listText },
-                { quoted: makeQuote("CZ_LIST_" + Date.now()) }
-            );
+        const listMsg = await client.sendMessage(m.chat, { text: listText }, { quoted: metaQuote });
 
-            const listMsgId = listMsg.key.id;
+        // ==========================================
+        // REPLY LISTENER (අංකය අල්ලා ගැනීමේ කොටස)
+        // ==========================================
+        const listener = async ({ messages }) => {
+            const replyMsg = messages[0];
+            if (!replyMsg.message) return;
 
-            // 3. Reply listener — prefix නැතිව plain number reply ද catch කරනවා
-            const listener = async ({ messages }) => {
-                const reply = messages[0];
-                if (!reply?.message) return;
+            const replyContext = replyMsg.message.extendedTextMessage?.contextInfo;
+            const isReplyToBot = replyContext?.stanzaId === listMsg.key.id;
 
-                // reply sender ම check කරනවා (group chat වල වෙනත් කෙනෙකුගේ reply block)
-                const replySender = reply.key.remoteJid;
-                if (replySender !== sender) return;
+            if (isReplyToBot) {
+                const userReply = (replyMsg.message.conversation || replyMsg.message.extendedTextMessage?.text || "").trim();
+                const selectedIndex = parseInt(userReply) - 1;
 
-                // quoted message ID check — extendedText හෝ buttonsResponse දෙකෙන්ම
-                const quotedId = getQuotedId(reply);
-                if (quotedId !== listMsgId) return;
-
-                // Text ලබා ගැනීම
-                const raw = getMsgText(reply)?.trim();
-                const idx = parseInt(raw) - 1;
-
-                if (isNaN(idx) || idx < 0 || idx >= results.length) {
-                    return socket.sendMessage(sender,
-                        { text: "❌ *1 සිට " + results.length + " දක්වා නිවැරදි අංකයක් Reply කරන්න.*" },
-                        { quoted: reply }
-                    );
+                if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
+                    return await client.sendMessage(m.chat, { text: "❌ *වැරදි අංකයක්! කරුණාකර නිවැරදි අංකයක් reply කරන්න.*" }, { quoted: replyMsg });
                 }
 
-                // Listener ඉවත් කිරීම
-                socket.ev.off("messages.upsert", listener);
-
-                const movie = results[idx];
+                const selectedMovie = topResults[selectedIndex];
 
                 try {
-                    await socket.sendMessage(sender, { react: { text: "🎬", key: reply.key } });
+                    await client.sendMessage(m.chat, { react: { text: "🎬", key: replyMsg.key } });
 
-                    // 4. Extract links
-                    const extRes  = await fetch(`https://cinesubz-api-cnw.vercel.app/api/extract?id=${movie.id}&type=mv`);
-                    const extData = await extRes.json();
+                    // Extract API එකෙන් ඩීටේල්ස් ලබා ගැනීම
+                    const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=mv`;
+                    const extRes = await axios.get(extractUrl);
+                    const extData = extRes.data;
 
-                    if (!extData.status || !extData.data?.length) {
-                        return socket.sendMessage(sender,
-                            { text: "❌ *Direct Links ලබා ගැනීමට නොහැකිවිය.*" },
-                            { quoted: reply }
-                        );
+                    if (!extData.status || !extData.data || extData.data.length === 0) {
+                        return await client.sendMessage(m.chat, { text: "❌ *මෙම චිත්‍රපටියේ Direct Links ලබාගත නොහැක.*" }, { quoted: replyMsg });
                     }
 
-                    const direct   = extData.data.find(v => v.is_direct_mp4) || extData.data[0];
-                    const baseLink = direct.link;
+                    // Direct MP4 ලින්ක් එකක් තෝරා ගැනීම
+                    const directVideo = extData.data.find(v => v.is_direct_mp4) || extData.data[0];
+                    const baseLink = directVideo.link;
 
-                    const shortTitle = movie.title
-                        .substring(0, 20)
-                        .replace(/[^a-zA-Z0-9 ]/g, "")
-                        .trim();
+                    const caption = `🎬 *${selectedMovie.title}*\n\n📅 *Year:* ${selectedMovie.year}\n🎭 *Genres:* ${selectedMovie.genres}\n⭐ *IMDB:* ${selectedMovie.imdb}\n\n> *ඔබට අවශ්‍ය Quality එක පහලින් තෝරන්න* ⬇️`;
 
-                    const caption =
-                        `🎬 *${movie.title}*\n\n` +
-                        `📅 *Year:* ${movie.year || "N/A"}\n` +
-                        `🎭 *Genres:* ${movie.genres || "N/A"}\n` +
-                        `⭐ *IMDB:* ${movie.imdb || "N/A"}\n\n` +
-                        `> *Quality select කරන්න* ⬇️`;
+                    // Button IDs සීමාව පනින්නේ නැති වෙන්න title එක පොඩි කිරීම
+                    const shortTitle = selectedMovie.title.substring(0, 20).replace(/[^a-zA-Z0-9 ]/g, "").trim();
 
+                    // Buttons සැකසීම
                     const buttons = [
-                        {
-                            buttonId : `cz_dl ${shortTitle} || 480p || ${baseLink}`,
-                            buttonText: { displayText: "🎥 480p (SD)" },
-                            type: 1,
-                        },
-                        {
-                            buttonId : `cz_dl ${shortTitle} || 720p || ${baseLink}`,
-                            buttonText: { displayText: "🎥 720p (HD)" },
-                            type: 1,
-                        },
+                        { buttonId: `.cz_dl ${shortTitle} || 480p || ${baseLink}`, buttonText: { displayText: "🎥 480p (SD)" }, type: 1 },
+                        { buttonId: `.cz_dl ${shortTitle} || 720p || ${baseLink}`, buttonText: { displayText: "🎥 720p (HD)" }, type: 1 }
                     ];
 
-                    await socket.sendMessage(sender,
-                        {
-                            image     : { url: movie.img },
-                            caption,
-                            footer    : "Whiteshadow MD | Cinesubz",
-                            buttons,
-                            headerType: 4,
-                        },
-                        { quoted: makeQuote("CZ_DETAIL_" + Date.now()) }
-                    );
+                    await client.sendMessage(m.chat, {
+                        image: { url: selectedMovie.img },
+                        caption: caption,
+                        footer: 'Sadew MD Cinesubz',
+                        buttons: buttons,
+                        headerType: 4
+                    }, { quoted: replyMsg });
+                    
+                    // වැඩේ ඉවර නිසා Listener එක අයින් කිරීම
+                    client.ev.off('messages.upsert', listener);
 
                 } catch (e) {
-                    console.error("[CZ] Detail error:", e.message);
-                    socket.sendMessage(sender,
-                        { text: "❌ *Movie details ලබා ගැනීමේ Error!*" },
-                        { quoted: reply }
-                    );
+                    console.error("Movie Detail Fetch Error:", e);
                 }
-            };
+            }
+        };
 
-            socket.ev.on("messages.upsert", listener);
-            // 90s ට listener remove
-            setTimeout(() => socket.ev.off("messages.upsert", listener), 90_000);
+        client.ev.on('messages.upsert', listener);
+        setTimeout(() => { client.ev.off('messages.upsert', listener); }, 60000); // විනාඩියකින් ලැයිස්තුව අක්‍රිය වේ
 
-        } catch (e) {
-            console.error("[CZ] Search error:", e.message);
-            socket.sendMessage(sender,
-                { text: "❌ *Search Error. පසුව නැවත උත්සාහ කරන්න.*" },
-                { quoted: msg }
-            );
-        }
+    } catch (e) {
+        console.error("Cinesubz Search Error:", e);
+        await client.sendMessage(m.chat, { text: "❌ *සෙවීමේදී දෝෂයක් ඇතිවිය.*" }, { quoted: m });
     }
-);
+});
 
-// =============================================
-// CINESUBZ DOWNLOAD  →  cz_dl (button callback)
-// Note: button ID prefix dot නැහැ — Baileys button IDs
-//       dot strip කරන නිසා "cz_dl ..." විදිහට ලිවීම හරිම.
-// =============================================
-Sparky(
-    {
-        pattern: /^cz_dl (.*)/i,
-        fromMe: isPublic,
-        desc: "Cinesubz Download Handler",
-        type: "downloader",
-    },
-    async (msg, match) => {
-        const socket = msg.client;
-        const sender = msg.jid;
+// ==========================================
+// 2. MOVIE DOWNLOAD COMMAND (.cz_dl)
+// ==========================================
+Sparky({
+    pattern: "cz_dl",
+    dontAddCommandList: true, // මේක බටන් කමාන්ඩ් එකක් නිසා ලිස්ට් එකට දාන්න අවශ්‍ය නැහැ
+    category: "download",
+    filename: __filename
+},
+async ({ m, client, args }) => {
+    // බටන් එකෙන් එන ID එක හෝ Text එක ලබා ගැනීම
+    const textContent = m.message?.buttonsResponseMessage?.selectedButtonId || m.text || '';
+    const inputData = textContent.replace(/^[.\/!#]cz_dl\s*/i, '').trim();
+    
+    if (!inputData.includes('||')) return;
 
-        // Button callback text
-        const raw = getMsgText(msg)?.replace(/^[.\/!#]?cz_dl\s*/i, "").trim() || match[1]?.trim() || "";
+    const [title, quality, originalUrl] = inputData.split(' || ');
+    if (!originalUrl) return;
 
-        if (!raw.includes("||")) return;
+    const botName = "SADEW-MD";
+    const metaQuote = {
+        key: { remoteJid: "status@broadcast", participant: "0@s.whatsapp.net", fromMe: false, id: "META_AI_CZ_DL" },
+        message: { contactMessage: { displayName: botName, vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${botName}\nORG:Cinesubz Downloader\nTEL;waid=13135550002:+1 313 555 0002\nEND:VCARD` } }
+    };
 
-        const parts = raw.split(" || ");
-        if (parts.length < 3) return;
+    try {
+        await client.sendMessage(m.chat, { react: { text: "⬇️", key: m.key } });
+        await client.sendMessage(m.chat, { text: `⬇️ *Downloading ${title} (${quality})...*\n_මෙය විශාල file එකක් බැවින්, WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක._` }, { quoted: metaQuote });
 
-        const [title, quality, originalUrl] = parts;
-
+        // URL එකේ Quality එක ටැග් එක අනුව වෙනස් කිරීම
+        let finalUrl = originalUrl;
+        if (quality === '480p') {
+            finalUrl = originalUrl.replace(/(720p|1080p|1080|720)/i, '480p');
+        } else if (quality === '720p') {
+            finalUrl = originalUrl.replace(/(480p|1080p|1080|480)/i, '720p');
+        }
+        
+        // 1. File Size එක පරීක්ෂා කිරීම (2GB Limit Check)
         try {
-            await socket.sendMessage(sender, { react: { text: "⬇️", key: msg.key } });
-            await socket.sendMessage(sender,
-                {
-                    text:
-                        `⬇️ *Downloading ${title} (${quality})...*\n` +
-                        `_විශාල file නිසා upload වෙන්නට ටිකක් time යාවි._`,
-                },
-                { quoted: makeQuote("CZ_DL_START") }
-            );
-
-            // Quality URL fix
-            let finalUrl = originalUrl;
-            if (quality === "480p") {
-                finalUrl = originalUrl.replace(/(1080p?|720p?)/i, "480p");
-            } else if (quality === "720p") {
-                finalUrl = originalUrl.replace(/(1080p?|480p?)/i, "720p");
-            }
-
-            // Size check
-            try {
-                const head   = await axios.head(finalUrl, { timeout: 10_000 });
-                const cl     = head.headers?.["content-length"];
-                if (cl) {
-                    const sizeMB = parseInt(cl) / (1024 * 1024);
-                    if (sizeMB > 1950) {
-                        await socket.sendMessage(sender, { react: { text: "❌", key: msg.key } });
-                        return socket.sendMessage(sender,
-                            {
-                                text:
-                                    `❌ *File 2GB ට වඩා විශාලයි! (${sizeMB.toFixed(2)} MB)*\n` +
-                                    `WhatsApp හරහා send කළ නොහැක.`,
-                            },
-                            { quoted: msg }
-                        );
-                    }
+            const headRes = await axios.head(finalUrl);
+            if (headRes && headRes.headers['content-length']) {
+                const sizeMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
+                // 1.95 GB පැනලා නම් වට්ස්ඇප් යවන්න බැරි නිසා නවත්වනවා
+                if (sizeMB > 1950) { 
+                    await client.sendMessage(m.chat, { react: { text: "❌", key: m.key } });
+                    return await client.sendMessage(m.chat, { text: `❌ *Error: File එක 2GB වලට වඩා විශාලයි! (${sizeMB.toFixed(2)} MB)*\nWhatsApp හරහා මෙය යැවිය නොහැක.` }, { quoted: m });
                 }
-            } catch (_) {
-                console.log("[CZ DL] Size check skipped.");
             }
-
-            // Send
-            await socket.sendMessage(sender,
-                {
-                    document : { url: finalUrl },
-                    mimetype : "video/mp4",
-                    fileName : `${title} - ${quality}.mp4`,
-                    caption  : `🎬 *${title}* [${quality}]\n\n> **𝕨𝕙𝕚𝕥𝕖𝕤𝕙𝕒𝕕𝕠𝕨-𝕞𝕕 ✨**`,
-                },
-                { quoted: makeQuote("CZ_DL_END") }
-            );
-
-            await socket.sendMessage(sender, { react: { text: "✅", key: msg.key } });
-
-        } catch (e) {
-            console.error("[CZ DL] Error:", e.message);
-            await socket.sendMessage(sender, { react: { text: "❌", key: msg.key } });
-            socket.sendMessage(sender,
-                { text: "❌ *Download Failed! Link expire වී ඇත.*" },
-                { quoted: msg }
-            );
+        } catch (headErr) {
+            console.log("Size check failed, proceeding with direct upload...");
         }
+
+        // 2. WhatsApp එකට Direct URL එකෙන් Document එකක් විදියට යැවීම (No Disk Write)
+        const caption = `🎬 *${title}* [${quality}]\n\n> **𝕊𝕒𝕕𝕖𝕨 𝕄𝔻 𝕄𝕚𝕟𝕚 ✨**`;
+
+        await client.sendMessage(m.chat, {
+            document: { url: finalUrl }, // GitHub Actions වල RAM/Buffer එකෙන් කෙලින්ම ස්ට්‍රීම් වෙනවා
+            mimetype: "video/mp4",
+            fileName: `${title} - ${quality}.mp4`,
+            caption: caption
+            }, { quoted: metaQuote });
+
+        await client.sendMessage(m.chat, { react: { text: "✅", key: m.key } });
+
+    } catch (e) {
+        console.error("Cinesubz DL Error:", e.message);
+        await client.sendMessage(m.chat, { react: { text: "❌", key: m.key } });
+        await client.sendMessage(m.chat, { text: "❌ *Download Failed! ලින්ක් එක දෝෂ සහිතයි හෝ Expire වී ඇත.*" }, { quoted: m });
     }
-);
+});
