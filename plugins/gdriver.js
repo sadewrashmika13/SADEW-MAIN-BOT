@@ -23,24 +23,6 @@ function extractFileId(url) {
     return null;
 }
 
-async function getDirectDownloadLink(fileId) {
-    // First try: WhiteShadow API
-    try {
-        const apiUrl = `${API_BASE}?url=https://drive.google.com/file/d/${fileId}/view&apitoken=${API_TOKEN}`;
-        const response = await axios.get(apiUrl, { timeout: 15000 });
-        if (response.data && response.data.success === true && response.data.download_url) {
-            return { url: response.data.download_url, method: 'api' };
-        }
-    } catch (e) {
-        console.log("[GDrive] API method failed, trying fallback...");
-    }
-
-    // Fallback: Generate direct download URL using file ID
-    // This works for public files
-    const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-    return { url: directUrl, method: 'direct' };
-}
-
 Sparky({
     name: "gdrive",
     alias: ["gd", "googledrive"],
@@ -53,7 +35,9 @@ Sparky({
         return m.reply(`📁 *Google Drive Downloader*
 
 *Usage:* ${m.prefix}gdrive <google_drive_link>
-*Example:* ${m.prefix}gdrive https://drive.google.com/file/d/xxxxx/view`);
+*Example:* ${m.prefix}gdrive https://drive.google.com/file/d/xxxxx/view
+
+*Note:* Large files (>100MB) may fail due to WhatsApp limits.`);
     }
 
     if (!url.includes("drive.google.com")) {
@@ -62,7 +46,7 @@ Sparky({
 
     const fileId = extractFileId(url);
     if (!fileId) {
-        return m.reply(`❌ *Invalid Google Drive URL*\n\nCould not extract file ID from the URL.`);
+        return m.reply(`❌ *Invalid Google Drive URL*\n\nCould not extract file ID.`);
     }
 
     await m.react("⏳");
@@ -70,61 +54,138 @@ Sparky({
     await m.reply(`🔍 *Processing Google Drive file...*\n📎 File ID: ${fileId}`);
 
     try {
-        // Get download link (with fallback)
-        const downloadInfo = await getDirectDownloadLink(fileId);
-        const downloadUrl = downloadInfo.url;
+        // Call the WhiteShadow API
+        const apiUrl = `${API_BASE}?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
+        const response = await axios.get(apiUrl, { timeout: 20000 });
+        const data = response.data;
 
-        await m.reply(`📥 *Downloading file...*\n⏳ Please wait...`);
+        // Log full response for debugging
+        console.log("[GDrive] API Response:", JSON.stringify(data, null, 2));
 
+        // Check if API returned an error
+        if (!data || data.success !== true) {
+            const errorMsg = data?.error || data?.message || "Unknown API error";
+            
+            // Provide specific user-friendly messages
+            if (errorMsg.includes("limit") || errorMsg.includes("quota")) {
+                throw new Error("Download limit reached. The file has been downloaded too many times or is too large.");
+            } else if (errorMsg.includes("permission") || errorMsg.includes("access")) {
+                throw new Error("File is not publicly accessible. Please check sharing settings.");
+            } else {
+                throw new Error(errorMsg);
+            }
+        }
+
+        // Extract download URL (try different possible field names)
+        let downloadUrl = data.download_url || 
+                          data.result?.download_url || 
+                          data.url || 
+                          data.result?.url;
+        
+        const fileName = data.file_name || 
+                        data.result?.file_name || 
+                        data.filename || 
+                        `gdrive_${fileId}`;
+        
+        const fileSize = data.file_size || 
+                        data.result?.file_size || 
+                        data.size || 
+                        null;
+
+        if (!downloadUrl) {
+            // Check if there's a direct link in the result
+            if (data.result && typeof data.result === 'string') {
+                downloadUrl = data.result;
+            } else {
+                throw new Error("No download URL received from API");
+            }
+        }
+
+        // Validate URL
+        if (!downloadUrl.startsWith("http")) {
+            console.warn("[GDrive] Invalid download URL format:", downloadUrl);
+            throw new Error("Invalid download URL format");
+        }
+
+        await m.reply(`📥 *Downloading file...*\n📄 File: ${fileName}${fileSize ? `\n📦 Size: ${fileSize}` : ''}\n⏳ Please wait...`);
+
+        // Download the actual file with better error handling
         const fileRes = await axios.get(downloadUrl, {
             responseType: 'arraybuffer',
             timeout: 120000,
             headers: { 
-                'User-Agent': 'Mozilla/5.0',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': '*/*'
             },
-            maxRedirects: 5
+            maxRedirects: 5,
+            validateStatus: (status) => status < 400 // Accept any status < 400
         });
+
+        // Check if we got an HTML page instead of a file
+        const contentType = fileRes.headers['content-type'] || '';
+        if (contentType.includes('text/html')) {
+            // Check if it's a Google Drive quota page
+            const htmlPreview = fileRes.data.slice(0, 1000).toString();
+            if (htmlPreview.includes('quota') || htmlPreview.includes('limit')) {
+                throw new Error("Download quota exceeded. The file has been downloaded too many times recently.");
+            }
+            throw new Error("Received HTML instead of file. The link might require authentication.");
+        }
 
         const buffer = Buffer.from(fileRes.data);
         const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
-        if (buffer.length < 5000) {
+        // Check if file is too small (likely an error page)
+        if (buffer.length < 10000) { // Less than 10KB
+            const preview = buffer.toString('utf8').substring(0, 500);
+            if (preview.includes('error') || preview.includes('quota') || preview.includes('limit')) {
+                throw new Error("Download quota exceeded or file not accessible.");
+            }
             throw new Error("Downloaded file is too small. The link might be invalid.");
         }
 
-        // Try to get filename from Content-Disposition header
-        let fileName = `gdrive_${fileId}`;
-        const contentDisposition = fileRes.headers['content-disposition'];
-        if (contentDisposition) {
-            const match = contentDisposition.match(/filename="(.+?)"/);
-            if (match) fileName = match[1];
+        // Check WhatsApp file size limit (~100MB for documents)
+        if (buffer.length > 100 * 1024 * 1024) {
+            await m.reply(`⚠️ *File is large (${fileSizeMB} MB)*\nWhatsApp may not accept files larger than 100MB.\nSending as document (may fail).`);
         }
 
-        // Determine MIME type
+        // Determine MIME type and extension
+        let ext = 'file';
         let mimetype = 'application/octet-stream';
-        const contentType = fileRes.headers['content-type'] || '';
-        if (contentType) mimetype = contentType;
-
-        // Get extension
-        let ext = '';
-        const nameParts = fileName.split('.');
-        ext = nameParts.length > 1 ? nameParts.pop() : 'file';
-        if (!ext || ext === fileName) {
-            if (mimetype.includes('pdf')) ext = 'pdf';
-            else if (mimetype.includes('zip')) ext = 'zip';
-            else if (mimetype.includes('image')) ext = mimetype.split('/')[1] || 'jpg';
-            else if (mimetype.includes('video')) ext = mimetype.split('/')[1] || 'mp4';
-            else ext = 'file';
-            fileName = `${fileName}.${ext}`;
+        
+        if (contentType.includes('application/vnd.android.package-archive') || fileName.endsWith('.apk')) {
+            mimetype = 'application/vnd.android.package-archive';
+            ext = 'apk';
+        } else if (contentType.includes('image')) {
+            mimetype = contentType.split(';')[0];
+            ext = contentType.split('/')[1] || 'jpg';
+        } else if (contentType.includes('video')) {
+            mimetype = contentType.split(';')[0];
+            ext = contentType.split('/')[1] || 'mp4';
+        } else if (contentType.includes('pdf')) {
+            mimetype = 'application/pdf';
+            ext = 'pdf';
+        } else if (contentType.includes('zip')) {
+            mimetype = 'application/zip';
+            ext = 'zip';
+        } else {
+            // Try to get extension from filename
+            const nameParts = fileName.split('.');
+            if (nameParts.length > 1) {
+                ext = nameParts.pop();
+                mimetype = `application/${ext}`;
+            }
         }
 
-        const caption = `📁 *Google Drive Download Complete*\n\n📄 *File:* ${fileName}\n📦 *Size:* ${fileSizeMB} MB\n🔗 *File ID:* ${fileId}\n${downloadInfo.method === 'direct' ? '⚠️ *Direct download (may have quota limits)*' : ''}\n\n> *Powered by SADEW-MINI*`;
+        const finalFileName = `${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
+        const caption = `📁 *Google Drive Download Complete*\n\n📄 *File:* ${fileName}\n📦 *Size:* ${fileSizeMB} MB\n🔗 *File ID:* ${fileId}\n\n> *Powered by WhiteShadow API*`;
+
+        // Send as document
         await client.sendMessage(m.jid, {
             document: buffer,
             mimetype: mimetype,
-            fileName: fileName,
+            fileName: finalFileName,
             caption: caption
         }, { quoted: m });
 
@@ -136,12 +197,14 @@ Sparky({
         await m.react("❌");
         
         let errorMsg = `❌ *Download failed*\n\n`;
-        if (error.message.includes("Download limit") || error.message.includes("quota")) {
-            errorMsg += `The file has reached its download limit or is not publicly accessible.\n\n💡 *Try these:*\n1. Make sure the file is shared with "Anyone with the link"\n2. Try again after a few hours (Google Drive quota resets)\n3. If you own the file, you can create a direct download link using:\n   \`https://drive.google.com/uc?export=download&id=${fileId}\``;
-        } else if (error.message.includes("not found") || error.message.includes("404")) {
-            errorMsg += `File not found. The link might be broken or the file has been removed.`;
-        } else if (error.message.includes("timeout")) {
-            errorMsg += `The download took too long. Please try again later.`;
+        if (error.message.includes("quota") || error.message.includes("limit") || error.message.includes("too many")) {
+            errorMsg += `Google Drive download limit reached.\n\n💡 *Solutions:*\n1. Try again after a few minutes\n2. Use a different Google Drive link\n3. Download the file directly from the browser`;
+        } else if (error.message.includes("permission") || error.message.includes("publicly accessible")) {
+            errorMsg += `File is not publicly accessible.\n\n💡 Make sure the file is shared with "Anyone with the link".`;
+        } else if (error.message.includes("large") || error.message.includes("100MB")) {
+            errorMsg += `File is too large for WhatsApp.\n\n💡 WhatsApp document limit is ~100MB.\nTry downloading from browser instead.`;
+        } else if (error.message.includes("HTML")) {
+            errorMsg += `The link requires login or verification.\n\n💡 Make sure the file is publicly shared.`;
         } else {
             errorMsg += `Error: ${error.message.substring(0, 150)}`;
         }
