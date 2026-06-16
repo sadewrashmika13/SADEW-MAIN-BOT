@@ -1,136 +1,226 @@
-// commands/movie.js
+// commands/cinesubz.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
-const API_KEY = "zan_FIAO7Ayh_eo1vllkep6";
-const API_BASE = "https://api.zanta-mini.store/api/sinhalasub";
-
-function getQuery(args) {
-    if (!args) return "";
-    if (Array.isArray(args)) return args.join(" ").trim();
-    if (typeof args === "string") return args.trim();
-    if (typeof args === "object") return Object.values(args).join(" ").trim();
-    return "";
-}
-
-if (!global.movieSessions) global.movieSessions = new Map();
+if (!global.cinesubzSessions) global.cinesubzSessions = new Map();
 
 Sparky({
-    name: "movie",
-    alias: ["cinema", "films"],
+    name: "cinesubz",
+    alias: ["cz", "movie2"],
     category: "download",
     fromMe: isPublic,
-    desc: "🎬 සිංහල උපසිරැසි චිත්‍රපට සොයා ගන්න"
+    desc: "🎬 Cinesubz වෙබ් අඩවියෙන් චිත්‍රපට සොයා බාගත කරගන්න."
 }, async ({ client, m, args }) => {
-    const query = getQuery(args);
+    
+    // යූසර් ටයිප් කරපු ටෙක්ස්ට් එක පිරිසිදු කර ගැනීම
+    let query = "";
+    if (args) {
+        query = Array.isArray(args) ? args.join(" ").trim() : args.trim();
+    }
+
     if (!query) {
-        return m.reply(`🎬 *සිංහල චිත්‍රපට සෙවුම*
+        return m.reply(`🎬 *CINESUBZ MOVIE DOWNLOADER*
 
-*Usage:* ${m.prefix}movie <movie name>
-*Example:* ${m.prefix}movie kishkindha
+*භාවිතය:* ${m.prefix}cz <movie_name>
+*උදාහරණ:* ${m.prefix}cz batman
 
-*After search:* ${m.prefix}movie <number>
-*Then download:* ${m.prefix}get <1|2>`);
+📌 *චිත්‍රපටය තෝරා ගැනීමට:* ${m.prefix}cz <අංකය>
+📌 *Quality එක තෝරා ගැනීමට:* ${m.prefix}cz <අංකය>`);
     }
 
-    const session = global.movieSessions.get(m.sender);
-    if (session && session.step === "awaiting_movie" && !isNaN(query)) {
-        const idx = parseInt(query) - 1;
-        if (idx < 0 || idx >= session.results.length) {
-            return m.reply(`❌ වැරදි අංකයක්. කරුණාකර 1-${session.results.length} අතර අංකයක් එවන්න.`);
+    const session = global.cinesubzSessions.get(m.sender);
+
+    // ==========================================
+    // 1. SESSION HANDLING (අංක රිප්ලයි අල්ලා ගැනීම)
+    // ==========================================
+    if (session && !isNaN(query)) {
+        const num = parseInt(query);
+
+        // පියවර 1: චිත්‍රපටය තෝරා ගැනීම
+        if (session.step === "awaiting_movie") {
+            const idx = num - 1;
+            if (idx < 0 || idx >= session.results.length) {
+                return m.reply(`❌ වැරදි අංකයක්! කරුණාකර 1-${session.results.length} අතර අංකයක් ඇතුලත් කරන්න.`);
+            }
+            const selectedMovie = session.results[idx];
+            await fetchQualityOptions(client, m, selectedMovie.id, selectedMovie.title);
+            return;
         }
-        const selected = session.results[idx];
-        await fetchQualityOptions(client, m, selected.url, selected.title);
-        // ✅ FIX: Do NOT delete the session here – fetchQualityOptions creates a new one.
-        // global.movieSessions.delete(m.sender);  // ❌ REMOVED
-        return;
+
+        // පියවර 2: Quality එක තෝරාගෙන ඩවුන්ලෝඩ් කිරීම
+        if (session.step === "awaiting_quality") {
+            const idx = num - 1;
+            if (idx < 0 || idx >= session.links.length) {
+                return m.reply(`❌ වැරදි අංකයක්! කරුණාකර ලබා දී ඇති නිවැරදි අංකයක් තෝරන්න.`);
+            }
+            const selectedLink = session.links[idx];
+            await downloadAndSendMovie(client, m, selectedLink, session.movieTitle);
+            global.cinesubzSessions.delete(m.sender); // වැඩේ ඉවර නිසා සෙශන් එක මකනවා
+            return;
+        }
     }
 
-    // New search
+    // ==========================================
+    // 2. NEW MOVIE SEARCH (අලුතින්ම සෙවීම)
+    // ==========================================
     await m.react("🔍");
     await client.sendPresenceUpdate('composing', m.jid);
-    await m.reply(`🔎 සොයමින් "${query}"...`);
+    await m.reply(`🔎 Cinesubz හි සොයමින් "${query}"...`);
 
     try {
-        const searchUrl = `${API_BASE}/search?apiKey=${API_KEY}&text=${encodeURIComponent(query)}`;
+        const searchUrl = `https://cinesubz-api-cnw.vercel.app/api/search?q=${encodeURIComponent(query)}`;
         const { data } = await axios.get(searchUrl, { timeout: 15000 });
 
-        if (!data?.success || !data?.results?.length) {
+        if (!data.status || !data.data || data.data.length === 0) {
             await m.react("❌");
-            return m.reply(`❌ "${query}" සඳහා ප්‍රතිඵල හමු නොවිණි.`);
+            return m.reply(`❌ සමාවෙන්න, "${query}" සඳහා කිසිදු චිත්‍රපටයක් හමුනොවිය.`);
         }
 
-        const results = data.results.slice(0, 8);
-        let listMsg = `🎬 *සිංහල උපසිරැසි ප්‍රතිඵල*\n🔍 *${query}*\n📊 හමු වූ: ${results.length}\n\n`;
+        const results = data.data.slice(0, 10); // මුල් ප්‍රතිඵල 10ක් පමණක් ගනී
+        let listMsg = `🎬 *SADEW MD - CINESUBZ SEARCH*\n\n🔍 *සෙව්වේ:* ${query}\n📊 ප්‍රතිඵල ගණන: ${results.length}\n\n`;
+        
         results.forEach((movie, i) => {
-            listMsg += `${i+1}. *${movie.title}*\n`;
+            listMsg += `*${i + 1}.* ${movie.title} (${movie.year || 'N/A'})\n`;
         });
-        listMsg += `\n📌 *චිත්‍රපටය තෝරන්න:* ${m.prefix}movie <අංකය>\nඋදා: ${m.prefix}movie 1`;
+        
+        listMsg += `\n📌 *චිත්‍රපටය තෝරා ගැනීමට:* ${m.prefix}cz <අංකය>\n*උදාහරණ:* ${m.prefix}cz 1`;
 
         await client.sendMessage(m.jid, { text: listMsg }, { quoted: m });
 
-        global.movieSessions.set(m.sender, {
+        // සෙශන් එක සේව් කර තැබීම
+        global.cinesubzSessions.set(m.sender, {
             step: "awaiting_movie",
             results: results,
             timestamp: Date.now()
         });
-        setTimeout(() => global.movieSessions.delete(m.sender), 5 * 60 * 1000);
-
+        
+        // විනාඩි 5කින් සෙශන් එක ඔටෝ මැකෙන්න දැමීම
+        setTimeout(() => global.cinesubzSessions.delete(m.sender), 5 * 60 * 1000);
         await m.react("✅");
+
     } catch (err) {
-        console.error("Search error:", err);
+        console.error("Cinesubz Search Error:", err);
         await m.react("❌");
         m.reply(`❌ සෙවීම අසාර්ථකයි: ${err.message.substring(0, 100)}`);
     }
 });
 
-async function fetchQualityOptions(client, m, movieUrl, title) {
+// ==========================================
+// 3. FETCH QUALITY LINKS FUNCTION
+// ==========================================
+async function fetchQualityOptions(client, m, movieId, title) {
     await m.react("⏳");
     await client.sendPresenceUpdate('composing', m.jid);
-    await m.reply(`📥 බාගැනීම් විකල්ප සොයමින් *${title}*...`);
+    await m.reply(`📥 බාගැනීම් විකල්ප සකසමින්: *${title}*...`);
 
     try {
-        const dlUrl = `${API_BASE}/dl?apiKey=${API_KEY}&text=${encodeURIComponent(movieUrl)}`;
-        const { data } = await axios.get(dlUrl, { timeout: 15000 });
+        const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${movieId}&type=mv`;
+        const { data } = await axios.get(extractUrl, { timeout: 15000 });
 
-        if (!data?.success || !data?.results?.links?.length) {
+        if (!data.status || !data.data || data.data.length === 0) {
             await m.react("❌");
-            return m.reply(`❌ "${title}" සඳහා බාගැනීම් සබැඳි හමු නොවිණි.`);
+            return m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි (Links) හමු නොවිණි.`);
         }
 
-        const allLinks = data.results.links;
-        const videoLinks = allLinks.filter(l => l.quality !== "Subtitles");
-        const subLink = allLinks.find(l => l.quality === "Subtitles");
+        // වීඩියෝ ලින්ක්ස් ටික පමණක් ෆිල්ටර් කර පිළිවෙලට සකසා ගැනීම
+        const rawLinks = data.data;
+        const validLinks = [];
 
-        const has720p = videoLinks.some(l => l.size === "HD 720p");
-        const has480p = videoLinks.some(l => l.size === "SD 480p");
+        // 480p, 720p, 1080p ලින්ක්ස් වෙන් කර හඳුනාගැනීම
+        rawLinks.forEach(linkObj => {
+            let qName = "Unknown Quality";
+            let str = (linkObj.quality || linkObj.resolution || "").toLowerCase();
+            
+            if (str.includes("480")) qName = "480p (SD)";
+            else if (str.includes("720")) qName = "720p (HD)";
+            else if (str.includes("1080")) qName = "1080p (FHD)";
+            else qName = linkObj.quality || "Direct MP4";
 
-        if (!has720p && !has480p) {
+            validLinks.push({
+                displayQuality: qName,
+                size: linkObj.size || "Unknown Size",
+                url: linkObj.link
+            });
+        });
+
+        if (validLinks.length === 0) {
             await m.react("❌");
-            return m.reply(`❌ මෙම චිත්‍රපටය සඳහා 720p හෝ 480p quality නැත.`);
+            return m.reply(`❌ බාගත හැකි මට්ටමේ කිසිදු Quality ලින්ක් එකක් හමු නොවිණි.`);
         }
 
-        let qualMsg = `🎬 *${title}*\n📥 *Quality එක තෝරන්න:*\n\n`;
-        if (has720p) qualMsg += `1. *720p* (HD) – වේගවත් බාගැනීම\n`;
-        if (has480p) qualMsg += `2. *480p* (SD) – කුඩා ගොනුව\n`;
-        qualMsg += `\n📌 *බාගැනීමට:* ${m.prefix}get <අංකය>\nඋදා: ${m.prefix}get 1 (720p සඳහා)`;
+        let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
+        validLinks.forEach((l, i) => {
+            qualMsg += `*${i + 1}.* ${l.displayQuality} -- [${l.size}]\n`;
+        });
+        
+        qualMsg += `\n📌 *බාගැනීමට:* ${m.prefix}cz <අංකය>\n*උදාහරණ:* ${m.prefix}cz 1`;
 
         await client.sendMessage(m.jid, { text: qualMsg }, { quoted: m });
 
-        // ✅ Store session for .get command (step awaiting_quality)
-        global.movieSessions.set(m.sender, {
+        // ඊළඟ පියවර සඳහා සෙශන් එක අප්ඩේට් කිරීම
+        global.cinesubzSessions.set(m.sender, {
             step: "awaiting_quality",
-            videoLinks: videoLinks,
-            subtitleLink: subLink ? subLink.direct_link : null,
+            links: validLinks,
             movieTitle: title,
             timestamp: Date.now()
         });
-        setTimeout(() => global.movieSessions.delete(m.sender), 5 * 60 * 1000);
+        
+        setTimeout(() => global.cinesubzSessions.delete(m.sender), 5 * 60 * 1000);
+        await m.react("🎬");
+
+    } catch (err) {
+        console.error("Quality Fetch Error:", err);
+        await m.react("❌");
+        m.reply(`❌ Quality විකල්ප ලබා ගැනීම අසාර්ථකයි: ${err.message.substring(0, 100)}`);
+    }
+}
+
+// ==========================================
+// 4. DOWNLOAD & SEND MOVIE FUNCTION
+// ==========================================
+async function downloadAndSendMovie(client, m, linkInfo, movieTitle) {
+    await m.react("⬇️");
+    
+    // Fake Quote සැකසීම (Sadew MD නමින්)
+    const botName = "SADEW-MD";
+    const metaQuote = {
+        key: { remoteJid: "status@broadcast", participant: "0@s.whatsapp.net", fromMe: false, id: "SADEW_MD_CINESUBZ" },
+        message: { contactMessage: { displayName: botName, vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${botName}\nORG:Sadew MD Downloader\nTEL;waid=13135550002:+1 313 555 0002\nEND:VCARD` } }
+    };
+
+    await client.sendMessage(m.jid, { text: `📥 *Downloading:* ${movieTitle}\n⚙️ *Quality:* ${linkInfo.displayQuality}\n📦 *Size:* ${linkInfo.size}\n\n_කරුණාකර රැඳී සිටින්න, චිත්‍රපටය ඔබ වෙත Upload වෙමින් පවතී..._` }, { quoted: metaQuote });
+
+    try {
+        // වට්ස්ඇප් සීමාවන් ඉක්මවා යනවාදැයි බැලීමට Size Check එකක් දාමු (Max 1.95GB)
+        try {
+            const headRes = await axios.head(linkInfo.url, { timeout: 10000 });
+            if (headRes && headRes.headers['content-length']) {
+                const sizeInMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
+                if (sizeInMB > 1990) {
+                    await m.react("❌");
+                    return m.reply(`❌ *ගොනුව විශාල වැඩියි! (${sizeInMB.toFixed(2)} MB)*\nවට්ස්ඇප් හරහා යැවිය හැක්කේ 2GB ට අඩු ෆයිල් පමණි.`);
+                }
+            }
+        } catch (hErr) {
+            console.log("Size check bypassed, trying direct stream.");
+        }
+
+        // ෆයිල් එක සිලෙක්ට් කරගත් නමින් වට්ස්ඇප් ඩොකියුමන්ට් එකක් විදියට කෙලින්ම යැවීම
+        const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
+        const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${linkInfo.displayQuality}\n📦 *Size:* ${linkInfo.size}\n\n> **𝕊𝕒𝕕𝕖𝕨 𝕄𝔻 𝕄𝕚𝕟𝕚 ✨**`;
+
+        await client.sendMessage(m.jid, {
+            document: { url: linkInfo.url },
+            mimetype: "video/mp4",
+            fileName: `${safeTitle} - ${linkInfo.displayQuality}.mp4`,
+            caption: caption
+        }, { quoted: metaQuote });
 
         await m.react("✅");
+
     } catch (err) {
-        console.error("Quality fetch error:", err);
+        console.error("Direct Upload Error:", err);
         await m.react("❌");
-        m.reply(`❌ බාගැනීම් විකල්ප ලබා ගැනීම අසාර්ථකයි: ${err.message.substring(0, 100)}`);
+        m.reply(`❌ බාගත කර ඔබ වෙත එවීමට අපොහොසත් විය. සර්වර් සබැඳියේ දෝෂයකි.\nError: ${err.message.substring(0, 80)}`);
     }
 }
