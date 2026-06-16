@@ -271,7 +271,7 @@ async function fetchAnimeQualityOptions(client, m, selectedAnime) {
 }
 
 // ==========================================
-// 5. DOWNLOAD & SEND FUNCTION (FIXED GOOGLE DRIVE)
+// 5. DOWNLOAD & SEND FUNCTION (WITH YOUTUBE & GDRIVE SUPPORT)
 // ==========================================
 async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle) {
     const metaQuote = getMetaQuote();
@@ -280,14 +280,70 @@ async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle)
     try {
         await m.react("⬇️");
 
-        // 🔥 CHECK IF IT'S A GOOGLE DRIVE LINK
+        // ---------- YOUTUBE SUPPORT ----------
+        if (finalUrl.includes("youtube.com") || finalUrl.includes("youtu.be") || finalUrl.includes("youtube")) {
+            await m.reply(`🔄 *YouTube video detected!*\n_Downloading via ytdl-core..._`);
+
+            try {
+                const ytdl = require("ytdl-core");
+                const info = await ytdl.getInfo(finalUrl);
+                const title = info.videoDetails.title;
+                const durationSec = parseInt(info.videoDetails.lengthSeconds);
+                const isLong = durationSec > 300;
+
+                // Choose quality: 720p for short, 480p for long
+                const format = ytdl.chooseFormat(info.formats, {
+                    quality: isLong ? 'lowest' : 'highest',
+                    filter: 'videoandaudio'
+                });
+                if (!format) throw new Error("No suitable format found");
+
+                const qualityLabel = isLong ? "480p" : "720p";
+                await m.reply(`📹 *${title}* (${qualityLabel})\n⬇️ Downloading...`);
+
+                const stream = ytdl(finalUrl, {
+                    format: format,
+                    requestOptions: {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    },
+                    highWaterMark: 1 << 25
+                });
+
+                const chunks = [];
+                for await (const chunk of stream) chunks.push(chunk);
+                const buffer = Buffer.concat(chunks);
+                const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+                const fileName = `${safeTitle} - ${qualityLabel}.mp4`;
+                const caption = `🎌 *${animeTitle}*\n⚙️ *Quality:* ${qualityLabel}\n📦 *Size:* ${fileSizeMB} MB\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
+
+                await client.sendMessage(m.jid, {
+                    document: buffer,
+                    mimetype: "video/mp4",
+                    fileName: fileName,
+                    caption: caption
+                }, { quoted: metaQuote });
+
+                await m.react("✅");
+                await m.reply(`✅ *Download complete!* (${fileSizeMB} MB)`);
+                return;
+            } catch (ytErr) {
+                console.error("YouTube download error:", ytErr);
+                await m.reply(`⚠️ *YouTube download failed!*\nSending direct link...`);
+                await client.sendMessage(m.jid, {
+                    text: `🔗 *${animeTitle}* (${qualityStr})\n\n${finalUrl}`
+                }, { quoted: metaQuote });
+                return;
+            }
+        }
+
+        // ---------- GOOGLE DRIVE SUPPORT ----------
         if (finalUrl.includes("drive.google.com") || finalUrl.includes("drive.usercontent.google.com")) {
             await m.reply(`🔄 *Google Drive file detected!*\n_Downloading via GDrive API..._`);
 
             try {
                 const result = await downloadGoogleDriveFile(finalUrl);
-                
-                // ගොනුවේ extension එක හඳුනාගන්න
                 const ext = result.fileName.split('.').pop().toLowerCase() || 'mp4';
                 const extMimeMap = {
                     'apk': 'application/vnd.android.package-archive',
@@ -302,7 +358,6 @@ async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle)
                     'srt': 'text/plain'
                 };
                 const mimetype = extMimeMap[ext] || 'video/mp4';
-
                 const caption = `🎌 *${animeTitle}*\n⚙️ *Quality:* ${qualityStr}\n📦 *Size:* ${result.fileSize} MB\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
                 await client.sendMessage(m.jid, {
@@ -317,11 +372,9 @@ async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle)
                 return;
             } catch (gdriveErr) {
                 console.error("GDrive download error:", gdriveErr);
-                // Try to extract file ID and create direct link
                 const fileId = finalUrl.match(/\/file\/d\/([^\/]+)/)?.[1] || 
                                finalUrl.match(/[?&]id=([^&]+)/)?.[1];
                 const fallbackLink = fileId ? `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t` : finalUrl;
-                
                 await m.reply(`⚠️ *Google Drive download failed!*\n\nSending direct link as fallback...`);
                 await client.sendMessage(m.jid, {
                     text: `🔗 *${animeTitle}* (${qualityStr})\n\n${fallbackLink}`
@@ -330,7 +383,7 @@ async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle)
             }
         }
 
-        // ---------- NON-GOOGLE DRIVE LINKS ----------
+        // ---------- OTHER LINKS (Direct download) ----------
         await m.reply(`📥 *Uploading Anime:* ${animeTitle}\n⚙️ *Quality:* ${qualityStr}\n\n_WhatsApp වෙත Upload වෙමින් පවතී. කරුණාකර රැඳී සිටින්න..._`);
 
         const caption = `🎌 *${animeTitle}*\n⚙️ *Quality:* ${qualityStr}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
