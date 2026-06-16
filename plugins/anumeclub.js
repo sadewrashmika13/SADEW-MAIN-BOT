@@ -35,18 +35,6 @@ function getQuery(args) {
 }
 
 // ==========================================
-// GOOGLE DRIVE DIRECT LINK CONVERTER
-// ==========================================
-function convertToDirectLink(url) {
-    if (!url) return null;
-    const gdMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=))([-\w]+)/);
-    if (gdMatch && gdMatch[1]) {
-        return `https://drive.google.com/uc?export=download&confirm=t&id=${gdMatch[1]}`;
-    }
-    return url;
-}
-
-// ==========================================
 // 1. MAIN SEARCH COMMAND (.anime / .ac)
 // ==========================================
 Sparky({
@@ -54,7 +42,7 @@ Sparky({
     alias: ["ac", "animeclub"],
     category: "download",
     fromMe: isPublic,
-    desc: "🎌 SL Anime Club API inda Anime huduki."
+    desc: "🎌 SL Anime Club වෙබ් අඩවියෙන් Anime සොයන්න."
 }, async ({ client, m, args }) => {
     try {
         const query = getQuery(args);
@@ -62,18 +50,18 @@ Sparky({
         if (!query) {
             return await m.reply(`🎌 *${BOT_NAME} - ANIME CLUB*
 
-*Bhavitha:* ${m.prefix}anime <hesaru>
-*Udaharane:* ${m.prefix}anime naruto
+*භාවිතය:* ${m.prefix}anime <නම>
+*උදාහරණ:* ${m.prefix}anime naruto
 
-📌 *Anime ayke madalu:* .<number> (Ex: .1)
-📌 *Quality ayke madalu:* .m1, .m2, .m3
+📌 *Anime තෝරා ගැනීමට:* .<අංකය> (උදා: .1)
+📌 *Quality තෝරා ගැනීමට:* .m1, .m2, .m3
 
 _${POWERED_BY}_`);
         }
 
         await m.react("🔍");
         await client.sendPresenceUpdate('composing', m.jid);
-        await m.reply(`🔎 Anime Club nalli hudukuttide "${query}"...`);
+        await m.reply(`🔎 Anime Club හි සොයමින් "${query}"...`);
 
         const searchUrl = `https://animeclub-api.udmodz-2ab.workers.dev/search?q=${encodeURIComponent(query)}`;
         const { data } = await axios.get(searchUrl, { 
@@ -101,18 +89,18 @@ _${POWERED_BY}_`);
 
         if (!resultsArray || resultsArray.length === 0) {
             await m.react("❌");
-            return await m.reply(`❌ Kshamisabeku, "${query}" ge yavude Anime sigilla.`);
+            return await m.reply(`❌ සමාවෙන්න, "${query}" සඳහා කිසිදු Anime එකක් හමුනොවිය.`);
         }
 
         const results = resultsArray.slice(0, 10);
-        let listMsg = `🎌 *${BOT_NAME} - ANIME SEARCH*\n\n🔍 *Hudukiddu:* ${query}\n📊 Phalithamsha: ${results.length}\n\n`;
+        let listMsg = `🎌 *${BOT_NAME} - ANIME SEARCH*\n\n🔍 *සෙව්වේ:* ${query}\n📊 ප්‍රතිඵල ගණන: ${results.length}\n\n`;
         
         results.forEach((anime, i) => {
             const title = anime.title || anime.name || "Unknown Title";
             listMsg += `*${i + 1}.* ${title}\n`;
         });
         
-        listMsg += `\n📌 *Anime ayke madalu number type madi:* .<number>\n*Udaharane:* .1 anthu .10 varege`;
+        listMsg += `\n📌 *Anime එක තෝරා ගැනීමට අංකය ටයිප් කරන්න:* .<අංකය>\n*උදාහරණ:* .1 හෝ .10 දක්වා`;
 
         const firstImg = results[0].image || results[0].img || results[0].thumbnail || results[0].cover;
         await sendMediaOrText(client, m.jid, listMsg, firstImg, m);
@@ -129,7 +117,7 @@ _${POWERED_BY}_`);
     } catch (err) {
         console.error("Anime Search Error:", err);
         await m.react("❌");
-        await m.reply(`❌ Search fail aagide: ${err.message.substring(0, 80)}`);
+        await m.reply(`❌ සෙවීම අසාර්ථකයි: ${err.message.substring(0, 80)}`);
     }
 });
 
@@ -141,7 +129,7 @@ for (let i = 1; i <= 10; i++) {
         name: `${i}`,
         category: "download",
         fromMe: isPublic,
-        desc: `Anime number ${i} ayke madalu.`
+        desc: `Anime අංක ${i} තෝරා ගැනීමට.`
     }, async ({ client, m }) => {
         try {
             const session = global.animeSessions.get(m.sender);
@@ -149,7 +137,7 @@ for (let i = 1; i <= 10; i++) {
 
             const idx = i - 1;
             if (idx < 0 || idx >= session.results.length) {
-                return await m.reply(`❌ Thappu number! Dayavittu list nalli irova number haki.`);
+                return await m.reply(`❌ වැරදි අංකයක්! කරුණාකර ලයිස්තුවේ ඇති අංකයක් ඇතුලත් කරන්න.`);
             }
 
             const selectedAnime = session.results[idx];
@@ -170,7 +158,7 @@ for (let j = 1; j <= 3; j++) {
         name: `m${j}`,
         category: "download",
         fromMe: isPublic,
-        desc: `Anime Quality ${j} download madalu.`
+        desc: `Anime Quality ${j} තෝරා බාගත කර ගැනීමට.`
     }, async ({ client, m }) => {
         try {
             const session = global.animeSessions.get(m.sender);
@@ -185,7 +173,7 @@ for (let j = 1; j <= 3; j++) {
             const animeTitle = session.animeTitle;
 
             if (!finalUrl) {
-                return await m.reply(`❌ Kshamisabeku, ee Anime ge *${qualityKey}* Quality siguthilla. Bere Quality ayke madi.`);
+                return await m.reply(`❌ සමාවෙන්න, මෙම Anime එක සඳහා *${qualityKey}* Quality එක ලබා දීමට නැත.`);
             }
 
             global.animeSessions.delete(m.sender);
@@ -206,12 +194,12 @@ async function fetchAnimeQualityOptions(client, m, selectedAnime) {
     const animeImg = selectedAnime.image || selectedAnime.img || selectedAnime.thumbnail || selectedAnime.cover;
 
     if (!animeUrl) {
-        return await m.reply(`❌ Ee Anime ge API yalli valid URL sigilla.`);
+        return await m.reply(`❌ මෙම Anime එක සඳහා වලංගු URL එකක් API එකෙන් ලබා දී නොමැත.`);
     }
 
     await m.react("⏳");
     await client.sendPresenceUpdate('composing', m.jid);
-    await m.reply(`📥 Download options prepare aaguttide: *${title}*...`);
+    await m.reply(`📥 බාගැනීම් විකල්ප සකසමින්: *${title}*...`);
 
     try {
         const extractUrl = `https://animeclub-api.udmodz-2ab.workers.dev/dl?url=${encodeURIComponent(animeUrl)}`;
@@ -229,11 +217,9 @@ async function fetchAnimeQualityOptions(client, m, selectedAnime) {
                 let url = obj.url || obj.link || obj.download || obj.file || obj.direct_link;
                 
                 if (qStr && url && typeof url === 'string' && url.startsWith('http')) {
-                    // Google Drive idre direct link ge convert madutte
-                    let directUrl = convertToDirectLink(url);
-                    if (qStr.includes("480")) { linksMap["480p"] = directUrl; foundExplicit = true; }
-                    if (qStr.includes("720")) { linksMap["720p"] = directUrl; foundExplicit = true; }
-                    if (qStr.includes("1080")) { linksMap["1080p"] = directUrl; foundExplicit = true; }
+                    if (qStr.includes("480")) { linksMap["480p"] = url; foundExplicit = true; }
+                    if (qStr.includes("720")) { linksMap["720p"] = url; foundExplicit = true; }
+                    if (qStr.includes("1080")) { linksMap["1080p"] = url; foundExplicit = true; }
                 }
                 for (let key in obj) {
                     findExplicitQualities(obj[key]);
@@ -245,9 +231,7 @@ async function fetchAnimeQualityOptions(client, m, selectedAnime) {
         if (!foundExplicit) {
             function getAnyLink(obj) {
                 if (typeof obj === 'string' && obj.startsWith('http') && !obj.match(/\.(jpg|jpeg|png|gif|webp|ico)$/i)) {
-                    if (!obj.endsWith('/') && !obj.endsWith('.lk') && !obj.endsWith('.com')) {
-                        return obj;
-                    }
+                    if (!obj.endsWith('/') && !obj.endsWith('.lk') && !obj.endsWith('.com')) return obj;
                 }
                 if (typeof obj === 'object' && obj !== null) {
                     if (obj.download_link && typeof obj.download_link === 'string') return obj.download_link;
@@ -264,25 +248,22 @@ async function fetchAnimeQualityOptions(client, m, selectedAnime) {
 
             let baseLink = getAnyLink(data);
             if (baseLink) {
-                let directBase = convertToDirectLink(baseLink);
-                linksMap["720p"] = directBase; 
-                linksMap["480p"] = directBase.replace(/(720p|1080p|1080|720)/gi, '480p');
-                linksMap["1080p"] = directBase.replace(/(480p|720p|480|720)/gi, '1080p');
+                linksMap["720p"] = baseLink; 
+                linksMap["480p"] = baseLink.replace(/(720p|1080p|1080|720)/gi, '480p');
+                linksMap["1080p"] = baseLink.replace(/(480p|720p|480|720)/gi, '1080p');
             }
         }
 
-        let qualMsg = `🎌 *${title}*\n\n📥 *Download Options:*\n\n`;
+        let qualMsg = `🎌 *${title}*\n\n📥 *බාගත කිරීම් විකල්ප:*\n\n`;
         let count = 0;
 
         if (linksMap["480p"]) { qualMsg += `🟢 *480p* (SD) ➡️ 📥 *.m1*\n`; count++; }
         if (linksMap["720p"]) { qualMsg += `🟢 *720p* (HD) ➡️ 📥 *.m2*\n`; count++; }
         if (linksMap["1080p"]) { qualMsg += `🟢 *1080p* (FHD) ➡️ 📥 *.m3*\n`; count++; }
 
-        if (count === 0) {
-             return await m.reply(`❌ API yalli download link sigilla.`);
-        }
+        if (count === 0) return await m.reply(`❌ බාගත හැකි මට්ටමේ ලින්ක් එකක් API එකෙන් ලබා දී නැත.`);
 
-        qualMsg += `\n📌 *Download madalu command kodi.*`;
+        qualMsg += `\n📌 *බාගැනීමට අදාළ කමාන්ඩ් එක දෙන්න.*`;
 
         await sendMediaOrText(client, m.jid, qualMsg, animeImg, m);
 
@@ -299,38 +280,47 @@ async function fetchAnimeQualityOptions(client, m, selectedAnime) {
     } catch (err) {
         console.error("Anime Quality Fetch Error:", err);
         await m.react("❌");
-        await m.reply(`❌ Quality options thegeyuvalli error: ${err.message.substring(0, 100)}`);
+        await m.reply(`❌ Quality විකල්ප ලබා ගැනීම අසාර්ථකයි: ${err.message.substring(0, 100)}`);
     }
 }
 
 // ==========================================
-// 5. DOWNLOAD & DIRECT SEND FUNCTION
+// 5. DOWNLOAD & DIRECT SEND FUNCTION (WITH WS API BYPASS)
 // ==========================================
 async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle) {
     try {
         await m.react("⬇️");
         const metaQuote = getMetaQuote();
+        let downloadUrl = finalUrl;
 
-        await client.sendMessage(m.jid, { text: `📥 *Downloading Anime:* ${animeTitle}\n⚙️ *Quality:* ${qualityStr}\n\n_Idu WhatsApp ge upload aagalu swalpa samaya thegedukollabuhudu..._` }, { quoted: metaQuote });
-        
-        try {
-            const headRes = await axios.head(finalUrl, { timeout: 10000 });
-            if (headRes && headRes.headers['content-length']) {
-                const sizeInMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
-                if (sizeInMB > 1990) {
-                    await m.react("❌");
-                    return await m.reply(`❌ *File size tumba doddadagide! (${sizeInMB.toFixed(2)} MB)*\nWhatsApp nalli 2GB ginta kadime size irova file matra kalisabahudu.`);
+        // 🧠 WhiteShadow API Google Drive Bypass Logic
+        if (finalUrl.includes("drive.google.com")) {
+            await m.reply(`🔄 Google Drive ගොනුවක් හඳුනාගත්තා!\n_WhiteShadow API හරහා Direct Link එක ලබාගනිමින්..._`);
+            try {
+                const wsApiUrl = `https://whiteshadow-x-api.onrender.com/api/download/gdrive?url=${encodeURIComponent(finalUrl)}&apitoken=VK4fry`;
+                const wsRes = await axios.get(wsApiUrl, { timeout: 20000 });
+                const wsData = wsRes.data;
+
+                if (wsData && wsData.success !== false) {
+                    // API එකෙන් එන JSON එකේ කොහේ හරි ලින්ක් එක තිබ්බොත් ඒක ගන්නවා
+                    downloadUrl = wsData.downloadUrl || wsData.url || wsData.link || wsData.download || 
+                                 (wsData.data && (wsData.data.url || wsData.data.downloadUrl)) || 
+                                 (wsData.result && (wsData.result.url || wsData.result.downloadUrl)) || 
+                                 finalUrl;
                 }
+            } catch (wsErr) {
+                console.error("WhiteShadow API Error:", wsErr);
+                // API එක අවුල් ගියොත් පරණ ලින්ක් එකෙන්ම ට්‍රයි කරනවා
             }
-        } catch (hErr) {
-            console.log("Size check bypassed.");
         }
+
+        await client.sendMessage(m.jid, { text: `📥 *Uploading Anime:* ${animeTitle}\n⚙️ *Quality:* ${qualityStr}\n\n_WhatsApp වෙත Upload වෙමින් පවතී. කරුණාකර රැඳී සිටින්න..._` }, { quoted: metaQuote });
 
         const safeTitle = animeTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎌 *${animeTitle}*\n⚙️ *Quality:* ${qualityStr}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
         await client.sendMessage(m.jid, {
-            document: { url: finalUrl },
+            document: { url: downloadUrl },
             mimetype: "video/mp4",
             fileName: `${safeTitle} - ${qualityStr}.mp4`,
             caption: caption
@@ -340,7 +330,7 @@ async function downloadAndSendAnime(client, m, finalUrl, qualityStr, animeTitle)
 
     } catch (err) {
         console.error("Direct Upload Error:", err);
-        await m.react("❌");
-        await m.reply(`❌ Download madi kalisalu sadhyavagilla.\n_Bahuysha ee Anime ya ${qualityStr} version server nalli illa._\n\nError: ${err.message.substring(0, 80)}`);
+        await m.react("⚠️");
+        await m.reply(`⚠️ ගොනුව විශාල වැඩි බැවින් හෝ සර්වර් දෝෂයක් හේතුවෙන් Upload කිරීම අසාර්ථක විය.\n\n🔗 *බාගත කිරීම සඳහා සබැඳිය:*\n${finalUrl}`);
     }
 }
