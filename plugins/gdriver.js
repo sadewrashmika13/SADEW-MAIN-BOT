@@ -13,25 +13,32 @@ function getQuery(args) {
     return "";
 }
 
-// Function to extract file ID from various Google Drive URL formats
 function extractFileId(url) {
-    // Pattern for: https://drive.google.com/file/d/FILE_ID/view
     let match = url.match(/\/file\/d\/([^\/]+)/);
     if (match) return match[1];
-    
-    // Pattern for: https://drive.google.com/open?id=FILE_ID
     match = url.match(/[?&]id=([^&]+)/);
     if (match) return match[1];
-    
-    // Pattern for: https://drive.google.com/uc?id=FILE_ID
-    match = url.match(/[?&]id=([^&]+)/);
-    if (match) return match[1];
-    
-    // Pattern for: short URLs like https://drive.google.com/.../FILE_ID
     match = url.match(/\/d\/([^\/]+)/);
     if (match) return match[1];
-    
     return null;
+}
+
+async function getDirectDownloadLink(fileId) {
+    // First try: WhiteShadow API
+    try {
+        const apiUrl = `${API_BASE}?url=https://drive.google.com/file/d/${fileId}/view&apitoken=${API_TOKEN}`;
+        const response = await axios.get(apiUrl, { timeout: 15000 });
+        if (response.data && response.data.success === true && response.data.download_url) {
+            return { url: response.data.download_url, method: 'api' };
+        }
+    } catch (e) {
+        console.log("[GDrive] API method failed, trying fallback...");
+    }
+
+    // Fallback: Generate direct download URL using file ID
+    // This works for public files
+    const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    return { url: directUrl, method: 'direct' };
 }
 
 Sparky({
@@ -46,20 +53,16 @@ Sparky({
         return m.reply(`📁 *Google Drive Downloader*
 
 *Usage:* ${m.prefix}gdrive <google_drive_link>
-*Example:* ${m.prefix}gdrive https://drive.google.com/file/d/xxxxx/view
-
-*Supports:* Google Drive file links (public or shared)`);
+*Example:* ${m.prefix}gdrive https://drive.google.com/file/d/xxxxx/view`);
     }
 
-    // Validate URL
     if (!url.includes("drive.google.com")) {
-        return m.reply(`❌ *Invalid URL*\n\nPlease provide a valid Google Drive link.\nExample: https://drive.google.com/file/d/xxxxx/view`);
+        return m.reply(`❌ *Invalid URL*\n\nPlease provide a valid Google Drive link.`);
     }
 
-    // Extract file ID for better validation
     const fileId = extractFileId(url);
     if (!fileId) {
-        return m.reply(`❌ *Invalid Google Drive URL*\n\nCould not extract file ID from the URL. Please check the link and try again.`);
+        return m.reply(`❌ *Invalid Google Drive URL*\n\nCould not extract file ID from the URL.`);
     }
 
     await m.react("⏳");
@@ -67,33 +70,19 @@ Sparky({
     await m.reply(`🔍 *Processing Google Drive file...*\n📎 File ID: ${fileId}`);
 
     try {
-        // Call the WhiteShadow API
-        const apiUrl = `${API_BASE}?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
-        const response = await axios.get(apiUrl, { timeout: 20000 });
-        const data = response.data;
+        // Get download link (with fallback)
+        const downloadInfo = await getDirectDownloadLink(fileId);
+        const downloadUrl = downloadInfo.url;
 
-        // Check if API returned an error
-        if (!data || data.success !== true) {
-            const errorMsg = data?.error || "Unknown error occurred";
-            throw new Error(errorMsg);
-        }
+        await m.reply(`📥 *Downloading file...*\n⏳ Please wait...`);
 
-        // Extract download URL from response
-        const downloadUrl = data.download_url || data.result?.download_url;
-        const fileName = data.file_name || data.result?.file_name || `gdrive_${fileId}`;
-        const fileSize = data.file_size || data.result?.file_size || null;
-
-        if (!downloadUrl) {
-            throw new Error("No download URL received from API");
-        }
-
-        await m.reply(`📥 *Downloading file...*\n📄 File: ${fileName}${fileSize ? `\n📦 Size: ${fileSize}` : ''}\n⏳ Please wait...`);
-
-        // Download the actual file
         const fileRes = await axios.get(downloadUrl, {
             responseType: 'arraybuffer',
             timeout: 120000,
-            headers: { 'User-Agent': 'Mozilla/5.0' },
+            headers: { 
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': '*/*'
+            },
             maxRedirects: 5
         });
 
@@ -104,42 +93,38 @@ Sparky({
             throw new Error("Downloaded file is too small. The link might be invalid.");
         }
 
-        // Determine MIME type and extension
-        let ext = '';
-        let mimetype = 'application/octet-stream';
-        const contentType = fileRes.headers['content-type'] || '';
-        
-        if (contentType.includes('image')) {
-            mimetype = contentType;
-            ext = contentType.split('/')[1] || 'jpg';
-        } else if (contentType.includes('video')) {
-            mimetype = contentType;
-            ext = contentType.split('/')[1] || 'mp4';
-        } else if (contentType.includes('pdf')) {
-            mimetype = 'application/pdf';
-            ext = 'pdf';
-        } else if (contentType.includes('zip')) {
-            mimetype = 'application/zip';
-            ext = 'zip';
-        } else if (contentType.includes('apk')) {
-            mimetype = 'application/vnd.android.package-archive';
-            ext = 'apk';
-        } else {
-            // Try to get extension from filename
-            const nameParts = fileName.split('.');
-            ext = nameParts.length > 1 ? nameParts.pop() : 'file';
-            mimetype = `application/${ext}`;
+        // Try to get filename from Content-Disposition header
+        let fileName = `gdrive_${fileId}`;
+        const contentDisposition = fileRes.headers['content-disposition'];
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="(.+?)"/);
+            if (match) fileName = match[1];
         }
 
-        const finalFileName = `${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        // Determine MIME type
+        let mimetype = 'application/octet-stream';
+        const contentType = fileRes.headers['content-type'] || '';
+        if (contentType) mimetype = contentType;
 
-        const caption = `📁 *Google Drive Download Complete*\n\n📄 *File:* ${fileName}\n📦 *Size:* ${fileSizeMB} MB\n🔗 *File ID:* ${fileId}\n\n> *Powered by WhiteShadow API*`;
+        // Get extension
+        let ext = '';
+        const nameParts = fileName.split('.');
+        ext = nameParts.length > 1 ? nameParts.pop() : 'file';
+        if (!ext || ext === fileName) {
+            if (mimetype.includes('pdf')) ext = 'pdf';
+            else if (mimetype.includes('zip')) ext = 'zip';
+            else if (mimetype.includes('image')) ext = mimetype.split('/')[1] || 'jpg';
+            else if (mimetype.includes('video')) ext = mimetype.split('/')[1] || 'mp4';
+            else ext = 'file';
+            fileName = `${fileName}.${ext}`;
+        }
 
-        // Send as document (works for all file types)
+        const caption = `📁 *Google Drive Download Complete*\n\n📄 *File:* ${fileName}\n📦 *Size:* ${fileSizeMB} MB\n🔗 *File ID:* ${fileId}\n${downloadInfo.method === 'direct' ? '⚠️ *Direct download (may have quota limits)*' : ''}\n\n> *Powered by SADEW-MINI*`;
+
         await client.sendMessage(m.jid, {
             document: buffer,
             mimetype: mimetype,
-            fileName: finalFileName,
+            fileName: fileName,
             caption: caption
         }, { quoted: m });
 
@@ -151,8 +136,8 @@ Sparky({
         await m.react("❌");
         
         let errorMsg = `❌ *Download failed*\n\n`;
-        if (error.message.includes("Invalid URL") || error.message.includes("Not a Google Drive link")) {
-            errorMsg += `The link is not a valid Google Drive URL.\nPlease make sure the link is correct and the file is shared publicly.`;
+        if (error.message.includes("Download limit") || error.message.includes("quota")) {
+            errorMsg += `The file has reached its download limit or is not publicly accessible.\n\n💡 *Try these:*\n1. Make sure the file is shared with "Anyone with the link"\n2. Try again after a few hours (Google Drive quota resets)\n3. If you own the file, you can create a direct download link using:\n   \`https://drive.google.com/uc?export=download&id=${fileId}\``;
         } else if (error.message.includes("not found") || error.message.includes("404")) {
             errorMsg += `File not found. The link might be broken or the file has been removed.`;
         } else if (error.message.includes("timeout")) {
