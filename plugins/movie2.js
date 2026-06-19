@@ -1,13 +1,12 @@
-// plugins/dubflix.js
-const { Sparky, isPublic } = require("../lib");
-const axios = require("axios");
-
+// Dubflix සඳහා වෙනම Session Map එකක්
 if (!global.dubflixSessions) global.dubflixSessions = new Map();
 
+// බොට් බ්‍රෑන්ඩින්ග් විස්තර
 const BOT_NAME = "★👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥 ★";
 const POWERED_BY = "Powered by sadew rashmika";
 const API_KEY = "zan_FIAO7Ayh_eo1vllkep6";
 
+// Fake Quote එකක් සැකසීමට පොදු ෆන්ක්ෂන් එකක්
 function getMetaQuote() {
     return {
         key: { remoteJid: "status@broadcast", participant: "0@s.whatsapp.net", fromMe: false, id: "SADEW_X_MD_DF" },
@@ -15,6 +14,7 @@ function getMetaQuote() {
     };
 }
 
+// පින්තූරයක් හෝ ටෙක්ස්ට් එකක් බිඳෙන්නේ නැතිව යැවීමට සකසන ලද සේෆ් ෆන්ක්ෂන් එකක්
 async function sendMediaOrText(client, jid, text, imageUrl, quoted) {
     if (imageUrl && imageUrl !== "N/A") {
         try {
@@ -31,15 +31,16 @@ function getQuery(args) {
     if (!args) return "";
     if (Array.isArray(args)) return args.join(" ").trim();
     if (typeof args === "string") return args.trim();
+    if (typeof args === "object") return Object.values(args).join(" ").trim();
     return "";
 }
 
 // ==========================================
-// 1. MAIN SEARCH & EPISODE SELECTOR (.df)
+// 1. MAIN DUBFLIX SEARCH COMMAND (.dubflix / .df)
 // ==========================================
 Sparky({
-    name: "df",
-    alias: ["dubflix"],
+    name: "dubflix",
+    alias: ["df"],
     category: "download",
     fromMe: isPublic,
     desc: "🎬 Dubflix වෙබ් අඩවියෙන් චිත්‍රපට සොයන්න."
@@ -48,27 +49,17 @@ Sparky({
         const query = getQuery(args);
 
         if (!query) {
-            return await m.reply(`🎬 *${BOT_NAME} - DUBFLIX*\n\n*භාවිතය:* ${m.prefix}df <movie_name>\n*උදා:* ${m.prefix}df venom\n\n📌 *චිත්‍රපටය තෝරා ගැනීමට:* .1 සිට .15\n📌 *Episode තෝරා ගැනීමට:* .df 1 සිට .df 15\n📌 *Quality තෝරා ගැනීමට:* .m1, .m2, .m3`);
+            return await m.reply(`🎬 *${BOT_NAME} - DUBFLIX*
+
+*භාවිතය:* ${m.prefix}df <movie_name>
+*උදාහරණ:* ${m.prefix}df venom
+
+📌 *චිත්‍රපටය තෝරා ගැනීමට:* .d<අංකය> (උදා: .d1 සිට .d10 දක්වා)
+📌 *Quality තෝරා ගැනීමට:* .dm1, .dm2, .dm3
+
+_${POWERED_BY}_`);
         }
 
-        // Check if this is an Episode Selection (.df 1, .df 2, etc.)
-        const numQuery = parseInt(query);
-        if (!isNaN(numQuery) && numQuery > 0 && numQuery <= 15) {
-            const session = global.dubflixSessions.get(m.sender);
-            if (session && session.step === "awaiting_episode") {
-                const idx = numQuery - 1;
-                if (idx < 0 || idx >= session.episodes.length) {
-                    return await m.reply(`❌ වැරදි අංකයක්! 1-${session.episodes.length} අතර අංකයක් දෙන්න.`);
-                }
-                const selectedEp = session.episodes[idx];
-                global.dubflixSessions.delete(m.sender); // clear session
-                
-                // true = isEpisode flag passed to prevent looping
-                return await fetchDfQualityOptions(client, m, { url: selectedEp.link, thumbnail: session.movieImg, title: selectedEp.name }, true);
-            }
-        }
-
-        // Otherwise, perform normal movie search
         await m.react("🔍");
         await client.sendPresenceUpdate('composing', m.jid);
         await m.reply(`🔎 Dubflix හි සොයමින් "${query}"...`);
@@ -81,16 +72,16 @@ Sparky({
             return await m.reply(`❌ සමාවෙන්න, "${query}" සඳහා කිසිදු චිත්‍රපටයක් හමුනොවිය.`);
         }
 
-        const results = data.results.slice(0, 15);
+        const results = data.results.slice(0, 10);
         let listMsg = `🎬 *${BOT_NAME} - DUBFLIX SEARCH*\n\n🔍 *සෙව්වේ:* ${query}\n📊 ප්‍රතිඵල ගණන: ${results.length}\n\n`;
         
         results.forEach((movie, i) => {
             listMsg += `*${i + 1}.* ${movie.title}\n`;
         });
         
-        listMsg += `\n📌 *චිත්‍රපටය තෝරා ගැනීමට අංකය ටයිප් කරන්න:* .<අංකය>\n*උදාහරණ:* .1 හෝ .15 දක්වා ඕනෑම එකක්`;
+        listMsg += `\n📌 *චිත්‍රපටය තෝරා ගැනීමට අංකය ටයිප් කරන්න:* .d<අංකය>\n*උදාහරණ:* .d1 හෝ .d10 දක්වා ඕනෑම එකක්`;
 
-        const firstMovieImg = results[0].thumbnail || "N/A";
+        const firstMovieImg = results[0].thumbnail || results[0].image || results[0].img;
         await sendMediaOrText(client, m.jid, listMsg, firstMovieImg, m);
 
         global.dubflixSessions.set(m.sender, {
@@ -110,14 +101,14 @@ Sparky({
 });
 
 // ==========================================
-// 2. MOVIE SELECTORS (.1 To .15)
+// 2. DYNAMIC NUMBER SELECTORS (.d1 To .d10)
 // ==========================================
-for (let i = 1; i <= 15; i++) {
+for (let i = 1; i <= 10; i++) {
     Sparky({
-        name: `${i}`,
+        name: `d${i}`,
         category: "download",
         fromMe: isPublic,
-        desc: `චිත්‍රපට අංක ${i} තෝරා ගැනීමට.`
+        desc: `Dubflix චිත්‍රපට අංක ${i} තෝරා ගැනීමට.`
     }, async ({ client, m }) => {
         try {
             const session = global.dubflixSessions.get(m.sender);
@@ -131,22 +122,22 @@ for (let i = 1; i <= 15; i++) {
             const selectedMovie = session.results[idx];
             global.dubflixSessions.delete(m.sender);
             
-            await fetchDfQualityOptions(client, m, selectedMovie, false);
+            await fetchDfQualityOptions(client, m, selectedMovie);
         } catch (err) {
-            console.error(`Error in numeric command .${i}:`, err);
+            console.error(`Error in numeric command .d${i}:`, err);
         }
     });
 }
 
 // ==========================================
-// 3. QUALITY SELECTORS (.m1, .m2, .m3)
+// 3. DYNAMIC QUALITY SELECTORS (.dm1, .dm2, .dm3)
 // ==========================================
 for (let j = 1; j <= 3; j++) {
     Sparky({
-        name: `m${j}`,
+        name: `dm${j}`,
         category: "download",
         fromMe: isPublic,
-        desc: `Quality ${j} තෝරා බාගත කර ගැනීමට.`
+        desc: `Dubflix Quality ${j} තෝරා බාගත කර ගැනීමට.`
     }, async ({ client, m }) => {
         try {
             const session = global.dubflixSessions.get(m.sender);
@@ -177,17 +168,17 @@ for (let j = 1; j <= 3; j++) {
 
             await downloadAndSendDfMovie(client, m, finalUrl, qualityKey, movieTitle);
         } catch (err) {
-            console.error(`Error in quality command .m${j}:`, err);
+            console.error(`Error in quality command .dm${j}:`, err);
         }
     });
 }
 
 // ==========================================
-// FETCH QUALITY OPTIONS FUNCTION (WITH LOOP FIX)
+// FETCH QUALITY OPTIONS FUNCTION (FIXED)
 // ==========================================
-async function fetchDfQualityOptions(client, m, selectedMovie, isEpisode = false) {
+async function fetchDfQualityOptions(client, m, selectedMovie) {
     const movieUrl = selectedMovie.url;
-    const movieImg = selectedMovie.thumbnail || selectedMovie.image || "N/A";
+    const movieImg = selectedMovie.thumbnail;
 
     await m.react("⏳");
     await client.sendPresenceUpdate('composing', m.jid);
@@ -205,15 +196,25 @@ async function fetchDfQualityOptions(client, m, selectedMovie, isEpisode = false
         const resultData = data.results;
         const title = resultData.title || selectedMovie.title;
 
-        // 1. Direct Link available
+        // 1. Direct Link එකක් තියෙනවා නම්
         if (resultData.direct_link && resultData.direct_link !== "N/A") {
-            const baseLink = resultData.direct_link;
+            let baseLink = resultData.direct_link;
+            const linkType = detectLinkType(baseLink); // Mega, MediaFire, Direct, etc.
 
+            // Mega link නම් quality modify කරන්න බැහැ, එකම link එකයි තියෙන්නේ
+            if (linkType === 'mega') {
+                const msg = `🎬 *${title}*\n📅 Release: ${resultData.release_date || 'N/A'}\n\n📥 *Download Link:*\n${baseLink}\n\n📌 *Note:* මෙය Mega link එකකි.  ඉහත link එක ඔබගේ browser එකෙන් විවෘත කර බාගත කරගන්න.`;
+                await sendMediaOrText(client, m.jid, msg, movieImg, m);
+                await m.react("🎬");
+                return;
+            }
+
+            // Direct / MediaFire / Others: Quality options පෙන්වන්න
             let qualMsg = `🎬 *${title}*\n📅 Release: ${resultData.release_date || 'N/A'}\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
-            qualMsg += `🟢 *480p* (SD Quality) ➡️ 📥 *.m1*\n`;
-            qualMsg += `🟢 *720p* (HD Quality) ➡️ 📥 *.m2*\n`;
-            qualMsg += `🟢 *1080p* (Full HD) ➡️ 📥 *.m3*\n\n`;
-            qualMsg += `📌 *බාගැනීමට කමාන්ඩ් එක දෙන්න:* .m1, .m2 හෝ .m3`;
+            qualMsg += `🟢 *480p* (SD Quality) ➡️ 📥 *.dm1*\n`;
+            qualMsg += `🟢 *720p* (HD Quality) ➡️ 📥 *.dm2*\n`;
+            qualMsg += `🟢 *1080p* (Full HD) ➡️ 📥 *.dm3*\n\n`;
+            qualMsg += `📌 *බාගැනීමට කමාන්ඩ් එක දෙන්න:* .dm1, .dm2 හෝ .dm3`;
 
             await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
 
@@ -227,35 +228,21 @@ async function fetchDfQualityOptions(client, m, selectedMovie, isEpisode = false
             setTimeout(() => global.dubflixSessions.delete(m.sender), 5 * 60 * 1000);
             await m.react("🎬");
 
-        // 2. Series / Collection List
+        // 2. Series එකක් නම්
         } else if (resultData.is_series && resultData.series_list && resultData.series_list.length > 0) {
-            
-            // LOOP FIX: If we came here from an episode link, and API still gives a list, it's an API bug.
-            if (isEpisode) {
-                await m.react("⚠️");
-                return await m.reply(`❌ *Zanta API Error:*\nමෙම කොටසේ (Episode) වීඩියෝ ලින්ක් එක ලබාගැනීමට API එක අපොහොසත් විය. (API එක නැවතත් Series List එකම ලබා දෙයි).`);
-            }
-
             let caption = `🎬 *${title}*\n📌 *මෙය Series එකක් හෝ Collection එකකි.*\n\n👇 *පහතින් අවශ්‍ය කොටස තෝරාගන්න:*\n\n`;
             
-            const filteredSeries = resultData.series_list.filter(item => !item.name.startsWith('#')).slice(0, 15);
+            const filteredSeries = resultData.series_list.filter(item => !item.name.startsWith('#'));
             
             filteredSeries.forEach((episode, i) => {
-                caption += `*${i + 1}.* ${episode.name}\n`;
+                const epLinkType = detectLinkType(episode.link);
+                const linkTypeEmoji = epLinkType === 'mega' ? '🔷' : (epLinkType === 'mediafire' ? '🔥' : '🔗');
+                caption += `*${i + 1}.* ${episode.name} ${linkTypeEmoji}\n🔗 *Command:* .df_ep ${episode.link}\n\n`;
             });
             
-            caption += `\n_(කොටස තේරීමට .df 1, .df 2 ආදී වශයෙන් යවන්න)_`;
+            caption += `_(ඉහත Command එක Copy කර යැවීමෙන් අදාළ කොටස බාගත කරගත හැක)_`;
 
             await sendMediaOrText(client, m.jid, caption, movieImg, m);
-            
-            global.dubflixSessions.set(m.sender, {
-                step: "awaiting_episode",
-                episodes: filteredSeries,
-                movieImg: movieImg,
-                timestamp: Date.now()
-            });
-
-            setTimeout(() => global.dubflixSessions.delete(m.sender), 5 * 60 * 1000);
             await m.react("🎬");
 
         } else {
@@ -271,20 +258,45 @@ async function fetchDfQualityOptions(client, m, selectedMovie, isEpisode = false
 }
 
 // ==========================================
-// DOWNLOAD & DIRECT SEND FUNCTION (MEGA FIX INCLUDED)
+// LINK TYPE DETECTION HELPER
+// ==========================================
+function detectLinkType(url) {
+    if (!url) return 'unknown';
+    if (url.includes('mega.nz') || url.includes('mega.co.nz')) return 'mega';
+    if (url.includes('mediafire.com')) return 'mediafire';
+    if (url.includes('drive.google.com')) return 'gdrive';
+    if (url.includes('pixeldrain.com')) return 'pixeldrain';
+    if (url.includes('1fichier.com')) return '1fichier';
+    if (url.includes('uploadhaven.com')) return 'uploadhaven';
+    return 'direct';
+}
+
+// ==========================================
+// SERIES EPISODE HANDLER (.df_ep)
+// ==========================================
+Sparky({
+    name: "df_ep",
+    category: "download",
+    fromMe: isPublic,
+    desc: "Dubflix Series Episode ලබා ගැනීම"
+}, async ({ client, m, args }) => {
+    try {
+        const url = getQuery(args);
+        if (!url) return await m.reply("❌ කරුණාකර Episode Link එක ලබා දෙන්න.");
+
+        await fetchDfQualityOptions(client, m, { url: url, thumbnail: null, title: "Episode" });
+    } catch (err) {
+        console.error("df_ep Error:", err);
+    }
+});
+
+// ==========================================
+// DOWNLOAD & DIRECT SEND FUNCTION
 // ==========================================
 async function downloadAndSendDfMovie(client, m, finalUrl, qualityStr, movieTitle) {
     try {
         await m.react("⬇️");
         const metaQuote = getMetaQuote();
-        
-        // MEGA LINK DETECTION (HTML 2KB fix)
-        if (finalUrl.includes("mega.nz")) {
-            await m.react("⚠️");
-            return await client.sendMessage(m.jid, { 
-                text: `⚠️ *MEGA Link Detected!*\n\nමෙම චිත්‍රපටය MEGA හි අඩංගු බැවින් WhatsApp හරහා කෙලින්ම එවිය නොහැක. (එසේ එව්වොත් 2KB HTML ෆයිල් එකක් පමණක් ලැබේ).\n\nකරුණාකර පහත ලින්ක් එකෙන් කෙලින්ම බාගත කරගන්න:\n\n🔗 ${finalUrl}\n\n*${BOT_NAME}*`
-            }, { quoted: metaQuote });
-        }
 
         await client.sendMessage(m.jid, { text: `📥 *Downloading:* ${movieTitle}\n⚙️ *Quality:* ${qualityStr}\n\n_මෙය WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක..._` }, { quoted: metaQuote });
         
