@@ -11,11 +11,11 @@ if (!global.menuMsgIds) global.menuMsgIds = new Set();
 // Helper function to show category submenu (reused in both .menu number and reply handler)
 async function showCategoryMenu(client, m, categoryNumber, prefix) {
     const categoriesList = [
-        { num: 1, name: "DOWNLOAD", icon: "📥", keywords: ["download", "yt", "youtube", "facebook", "fb", "instagram", "ig", "media", "video", "audio", "song", "music"] },
+        { num: 1, name: "DOWNLOAD", icon: "📥", keywords: ["download", "yt", "youtube", "facebook", "fb", "instagram", "ig", "media", "video", "audio", "tp", "ttp"] },
         { num: 2, name: "AI", icon: "🧠", keywords: ["ai", "chatgpt", "gpt", "gemini", "bard", "chatbot", "ai chat"] },
         { num: 3, name: "GROUP", icon: "👥", keywords: ["group", "gc", "gcast", "groupcast", "tag", "mention", "invite", "link", "group info"] },
         { num: 4, name: "ADMIN", icon: "⚙️", keywords: ["admin", "promote", "demote", "kick", "remove", "add", "mute", "unmute", "warning", "warn"] },
-        { num: 5, name: "TOOLS", icon: "🔧", keywords: ["tool", "qr", "scanner", "shortener", "url", "converter", "sticker", "photo", "image", "edit"] },
+        { num: 5, name: "TOOLS", icon: "🔧", keywords: ["tool", "qr", "scanner", "shortener", "url", "converter", "sticker", "photo", "image", "take", "edit", "emo"] },
         { num: 6, name: "OWNER", icon: "👑", keywords: ["owner", "bot", "restart", "shutdown", "update", "block", "unblock", "broadcast"] },
         { num: 7, name: "OTHER", icon: "📁", keywords: ["fun", "game", "meme", "quote", "weather", "news", "search", "info"] },
         { num: 8, name: "SONG",  icon: "🎵", keywords: ["song", "music", "mp3", "play", "audio", "spotify", "ytmp3", "lyrics"] }
