@@ -1,172 +1,69 @@
-const { Sparky, isPublic } = require("../lib");
-const axios = require("axios");
-const FormData = require("form-data");
+const { Sparky } = require("../lib");
 
-// API Config
-const AI_EDIT_API_URL = "https://whiteshadow-x-api.onrender.com/api/ai/flatai-edit";
-const API_TOKEN = "VK4fry"; // ඔයා දුන්න API Key එක
+// මැසේජ් මතක තියාගන්න Cache එක
+if (!global.msgCache) global.msgCache = [];
 
-/**
- * ⚡ AI-Friendly Image Uploader
- * AI සර්වර්ස් වලට කියවිය හැකි සැබෑ Raw .jpg ලින්ක් සාදයි.
- */
-async function uploadImageToPublicServer(buffer) {
-  const filename = `sparky_edit_${Date.now()}.jpg`;
-
-  // --- ක්‍රමය 1: Envs.sh ---
-  try {
-    const formData = new FormData();
-    formData.append("file", buffer, { filename, contentType: "image/jpeg" });
-
-    const response = await axios.post("https://envs.sh", formData, {
-      headers: formData.getHeaders(),
-      timeout: 25000,
-    });
-
-    if (response.data && String(response.data).includes("https://envs.sh/")) {
-      let directUrl = String(response.data).trim();
-      // ලින්ක් එකේ අගට .jpg නැත්නම් බලෙන් එකතු කිරීම (For AI API Safety)
-      if (!directUrl.endsWith(".jpg") && !directUrl.endsWith(".jpeg")) {
-         directUrl = directUrl + "?ext=.jpg";
-      }
-      console.log("Uploaded successfully to Envs.sh:", directUrl);
-      return directUrl;
-    }
-  } catch (error) {
-    console.error("Envs.sh Upload Failed, trying backup...");
-  }
-
-  // --- ක්‍රමය 2: Uguu.se ---
-  try {
-    const formData = new FormData();
-    formData.append("files[]", buffer, { filename, contentType: "image/jpeg" });
-
-    const response = await axios.post("https://uguu.se/upload.php", formData, {
-      headers: formData.getHeaders(),
-      timeout: 25000,
-    });
-
-    if (response.data?.success && response.data?.files?.[0]?.url) {
-      const directUrl = response.data.files[0].url;
-      console.log("Uploaded successfully to Uguu.se:", directUrl);
-      return directUrl;
-    }
-  } catch (error) {
-    console.error("Uguu.se Backup Uploader also failed:", error.message);
-  }
-
-  return null;
-}
-
-// Bot Command එක define කිරීම
-Sparky(
-  {
-    name: "editimg",
-    alias: ["edit", "aiedit", "imgedit"],
-    fromMe: isPublic,
-    category: "ai",
-    desc: "Reply to an image with a prompt to edit it using AI.",
-  },
-  async ({ m, client, args }) => {
-    const prompt = Array.isArray(args) ? args.join(" ").trim() : String(args || "").trim();
-
-    if (!prompt) {
-      return await m.reply(
-        `❌ *Usage:* Reply to an image and type:\n.edit <your prompt>\n\nExample:\n.edit add neon cyberpunk glasses`
-      );
-    }
-
-    const isQuotedImage = m.quoted && (
-        m.quoted.mtype === "imageMessage" || 
-        m.quoted.type === "image" ||
-        (m.quoted.mime && m.quoted.mime.startsWith("image/")) ||
-        !!m.quoted.message?.imageMessage ||
-        !!m.quoted.message?.viewOnceMessage?.message?.imageMessage
-    );
-
-    if (!isQuotedImage) {
-      return await m.reply("❌ *Error:* Please reply to an *Image* to edit it.");
-    }
-
-    try { if (typeof m.react === "function") await m.react("⏳"); } catch {}
-
-    // 1. WhatsApp image buffer එක download කරගැනීම
-    await m.reply("⏳ _Downloading original image..._");
-    let imageBuffer;
+// pattern වෙනුවට on: "all" හෝ pattern එක හිස්ව තියමු හැම එකම අල්ලන්න
+Sparky({
+    name: "antidelete",
+    on: "message", 
+    pattern: /[\s\S]*/, // Text නැති මැසේජ් වුණත් අල්ලන්න
+    fromMe: false,
+    dontAddCommandList: true,
+    desc: "Anti-Delete System"
+}, async ({ client, m }) => {
     try {
-      if (typeof m.quoted.download === "function") {
-          imageBuffer = await m.quoted.download();
-      } else if (client.downloadMediaMessage) {
-          imageBuffer = await client.downloadMediaMessage(m.quoted);
-      } else {
-          const msg = m.quoted.message?.imageMessage || m.quoted.message?.viewOnceMessage?.message?.imageMessage;
-          if (msg) imageBuffer = await client.downloadMediaMessage(msg);
-      }
-      
-      if (!imageBuffer) throw new Error("Buffer empty.");
-    } catch (err) {
-      console.error("Image Download Error:", err);
-      try { if (typeof m.react === "function") await m.react("❌"); } catch {}
-      return await m.reply("❌ *Error:* Failed to download the replied image.");
+        if (!m || !m.key) return;
+
+        // 1. එන හැම මැසේජ් එකක්ම Cache එකට දාගන්නවා
+        if (m.message && !m.message.protocolMessage) {
+            const exists = global.msgCache.find(msg => msg.id === m.key.id);
+            if (!exists) {
+                global.msgCache.push({
+                    id: m.key.id,
+                    message: m.message,
+                    sender: m.sender || m.key.participant || m.key.remoteJid,
+                    chat: m.key.remoteJid
+                });
+                
+                if (global.msgCache.length > 500) {
+                    global.msgCache.shift();
+                }
+            }
+        }
+
+        // 2. කවුරුහරි මැසේජ් එකක් මකනවද කියලා බලනවා
+        let isRevoke = m.message && m.message.protocolMessage && 
+                      (m.message.protocolMessage.type === 0 || 
+                       m.message.protocolMessage.type === "REVOKE" || 
+                       m.message.protocolMessage.type === 14);
+
+        if (isRevoke) {
+            let deletedKey = m.message.protocolMessage.key;
+            let deletedId = deletedKey.id;
+
+            // මකපු මැසේජ් එක අපේ Cache එකේ තියෙනවද හොයනවා
+            let foundMsg = global.msgCache.find(msg => msg.id === deletedId);
+
+            if (foundMsg) {
+                // ⚠️ මෙතනට ඔයාගේ ඇත්තම නම්බර් එක දෙන්න (පහළ තියෙන එක හරිද බලන්න)
+                let ownerNumber = "94783360267@s.whatsapp.net"; 
+
+                let textMsg = `🚫 *DELETED MESSAGE DETECTED* 🚫\n\n`;
+                textMsg += `👤 *Sender:* @${foundMsg.sender.split("@")[0]}\n`;
+                textMsg += `📌 *Chat:* ${foundMsg.chat.includes("-") || foundMsg.chat.includes("g.us") ? "Group" : "Private Inbox"}\n`;
+                textMsg += `⏳ *Time:* ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Colombo" })}\n\n`;
+                textMsg += `👇 *මැකූ පණිවිඩය පහතින් ඇත* 👇`;
+
+                await client.sendMessage(ownerNumber, { 
+                    text: textMsg, 
+                    mentions: [foundMsg.sender] 
+                });
+
+                await client.relayMessage(ownerNumber, foundMsg.message, { messageId: deletedId });
+            }
+        }
+    } catch (e) {
+        console.log("Anti-Delete Error:", e);
     }
-
-    // 2. ෆොටෝ එක URL එකක් බවට පත් කිරීම
-    await m.reply("📤 _Generating public URL..._");
-    const publicImageUrl = await uploadImageToPublicServer(imageBuffer);
-
-    if (!publicImageUrl) {
-      try { if (typeof m.react === "function") await m.react("❌"); } catch {}
-      return await m.reply("❌ *Error:* Failed to generate a clean public image link.");
-    }
-
-    // 3. WhiteShadow AI Edit API එක call කිරීම
-    await m.reply(`🤖 _AI Editing image: "${prompt}"..._`);
-    
-    const apiUrl = `${AI_EDIT_API_URL}?url=${encodeURIComponent(publicImageUrl)}&prompt=${encodeURIComponent(prompt)}&apitoken=${API_TOKEN}`;
-
-    try {
-      const response = await axios.get(apiUrl, { timeout: 120000 });
-      const apiData = response.data;
-
-      if (apiData.status !== "success" || !apiData.result?.edited_image_url) {
-        throw new Error(apiData.msg || apiData.result?.message || "AI API Server Internal Error.");
-      }
-
-      const editedImageUrl = apiData.result.edited_image_url;
-
-      // 4. Edit වුණු ෆොටෝ එක WhatsApp එකට එවන්න
-      await m.reply("⬆️ _Downloading edited image and sending..._");
-
-      const finalCaption = `✨ *ѕά𝓭є𝔀 ᵐ𝐃 AI Image Edit*\n\n📝 *Prompt:* ${prompt}\n🛡️ *Watermark:* removed\n\n*Downloaded by SADEW-MD*`;
-
-      await client.sendMessage(
-        m.jid,
-        {
-          image: { url: editedImageUrl },
-          caption: finalCaption,
-        },
-        { quoted: m }
-      );
-
-      try { if (typeof m.react === "function") await m.react("✅"); } catch {}
-
-    } catch (apiError) {
-      console.error("AI API Error Details:", apiError.response?.data || apiError.message);
-      try { if (typeof m.react === "function") await m.react("❌"); } catch {}
-      
-      // සර්වර් එක ඇතුලෙන් ආපු සැබෑ මැසේජ් එක Extract කරගැනීම
-      let serverRawError = apiError.message;
-      if (apiError.response?.data) {
-          serverRawError = typeof apiError.response.data === "object" 
-            ? JSON.stringify(apiError.response.data, null, 2) 
-            : String(apiError.response.data).slice(0, 200);
-      }
-      
-      const errMsg = apiError.message.includes("timeout") 
-          ? "❌ *Timeout:* The AI took too long to generate the image."
-          : `❌ *Error:* ${apiError.message}\n\n📊 *WhiteShadow Server Response:* \`\`\`${serverRawError}\`\`\``;
-          
-      await m.reply(errMsg);
-    }
-  }
-);
+});
