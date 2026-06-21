@@ -1,14 +1,10 @@
-const {
-    Sparky,
-    commands,
-    isPublic
-} = require("../lib");
+const { Sparky, commands, isPublic } = require("../lib");
 const config = require("../config.js");
 
-// Global set to track main menu message IDs
-if (!global.menuMsgIds) global.menuMsgIds = new Set();
+// Users ලා කිහිප දෙනෙක් එකපාර මෙනු එක පාවිච්චි කරද්දී පැටලෙන්නේ නැති වෙන්න Map එකක් පාවිච්චි කරනවා
+if (!global.menuContexts) global.menuContexts = {};
 
-// Helper function to show category submenu (reused in both .menu number and reply handler)
+// Helper function to show category submenu
 async function showCategoryMenu(client, m, categoryNumber, prefix) {
     const defaultImg = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1780590033/zanta_media_uploads/dttqjshprca9zvqcpbwg.jpg";
 
@@ -102,25 +98,18 @@ async function showCategoryMenu(client, m, categoryNumber, prefix) {
     return true;
 }
 
-// Main menu command
+// 1. ප්‍රධාන මෙනුව යවන කමාන්ඩ් එක
 Sparky({
     name: "menu",
+    alias: ["help", "list"],
     category: "misc",
     fromMe: isPublic,
-    desc: "📋 සියලුම විධාන බලන්න - අංකයක් එවන්න"
+    desc: "📋 සියලුම විධාන බලන්න"
 }, async ({ client, m, args }) => {
     try {
-        let userInput = "";
-        if (args && Array.isArray(args)) {
-            userInput = args.join(" ").trim();
-        } else if (args && typeof args === 'string') {
-            userInput = args.trim();
-        } else if (args && typeof args === 'object') {
-            userInput = Object.values(args).join(" ").trim();
-        } else {
-            userInput = "";
-        }
+        let userInput = args ? (Array.isArray(args) ? args.join(" ").trim() : args.trim()) : "";
         
+        // කෙලින්ම ".menu 1" වගේ ගැහුවොත් අදාළ මෙනුවට යෑම
         if (userInput && /^[0-9]+$/.test(userInput)) {
             let selectedNum = parseInt(userInput);
             await showCategoryMenu(client, m, selectedNum, m.prefix || ".");
@@ -131,7 +120,6 @@ Sparky({
         let now = new Date();
         let date = now.toLocaleDateString("en-IN", { timeZone: "Asia/Colombo" });
         let time = now.toLocaleTimeString("en-IN", { timeZone: "Asia/Colombo" });
-        
         let botName = config.BOT_INFO ? config.BOT_INFO.split(";")[0] : "SADEW MINI";
         
         let mainMenu = `
@@ -159,10 +147,8 @@ Sparky({
 ⊱ ─────── { 𑁍 } ─────── ⊰
 ╰┈⪼ 𝘗𝘰𝘸𝘦𝘳𝘦𝘥 𝘉𝘺 ${botName} ⪻
 ⊱ ─────── { 𑁍 } ─────── ⊰
-💡 *භාවිතය*
-📌 *අංකයක් එවන්න* :
-• ${m.prefix || "."}menu 1  → DOWNLOAD
-• ${m.prefix || "."}menu 2  → AI
+
+📌 *ඉදිරියට යාමට අදාළ අංකය Reply කරන්න.* (Reply with a number)
 `;
 
         const menuImageUrl = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1780590033/zanta_media_uploads/dttqjshprca9zvqcpbwg.jpg";
@@ -172,13 +158,44 @@ Sparky({
             caption: mainMenu
         }, { quoted: m });
         
-        global.menuMsgIds.add(sentMsg.key.id);
-        setTimeout(() => global.menuMsgIds.delete(sentMsg.key.id), 5 * 60 * 1000);
+        // 🔴 ඔයා හොයාගත්ත සුපිරි ලොජික් එක මෙතන තියෙනවා: ID එක සේව් කිරීම
+        global.menuContexts[m.sender] = { 
+            step: "main_menu", 
+            quotedId: sentMsg.key.id 
+        };
+        
+        // විනාඩි 5කින් Auto Clear වෙන්න හදනවා (Memory එක පිරෙන්නේ නැති වෙන්න)
+        setTimeout(() => {
+            if (global.menuContexts[m.sender]) delete global.menuContexts[m.sender];
+        }, 5 * 60 * 1000);
         
     } catch (e) {
         console.log("Menu error:", e);
-        console.log("Error stack:", e.stack);
-        m.reply(`❌ සමාවන්න, මෙනුව පෙන්වන්න බැරි වුණා.\n\n📝 *Error:* ${e.message}\n\n💡 උපදෙස්: ${m.prefix || "."}help`);
+        m.reply(`❌ සමාවන්න, මෙනුව පෙන්වන්න බැරි වුණා.\n📝 *Error:* ${e.message}`);
     }
 });
 
+// 2. අර ඔයා හොයාගත්ත Reply අල්ලන සුපිරි ලොජික් එක! (Listen to text replies)
+Sparky({
+    on: "text",
+    fromMe: isPublic,
+    dontAddCommandList: true
+}, async ({ client, m }) => {
+    let context = global.menuContexts[m.sender];
+    
+    // User ට Context එකක් නැත්නම් හෝ Reply කරලා නැත්නම් මුකුත් කරන්නේ නෑ
+    if (!context || !m.quoted) return;
+
+    // මැසේජ් එක රිප්ලයි කරලා තියෙන්නේ අපේ මෙනු එකටමද කියලා බලනවා
+    if (context.step === "main_menu" && m.quoted.key.id === context.quotedId) {
+        let number = parseInt(m.text.trim());
+        
+        // 1 ඉඳන් 8 ට අංකයක් ගැහුවොත්
+        if (!isNaN(number) && number >= 1 && number <= 8) {
+            await showCategoryMenu(client, m, number, m.prefix || ".");
+            
+            // වැඩේ ඉවර වුණාට පස්සේ Context එක අයින් කරනවා (එක පාරයි වැඩ කරන්නේ)
+            delete global.menuContexts[m.sender];
+        }
+    }
+});
