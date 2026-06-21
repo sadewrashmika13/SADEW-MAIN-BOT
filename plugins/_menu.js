@@ -8,7 +8,7 @@ const config = require("../config.js");
 // Global set to track main menu message IDs
 if (!global.menuMsgIds) global.menuMsgIds = new Set();
 
-// Helper function to show category submenu
+// Helper function to show category submenu (reused in both .menu number and reply handler)
 async function showCategoryMenu(client, m, categoryNumber, prefix) {
     const defaultImg = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1780590033/zanta_media_uploads/dttqjshprca9zvqcpbwg.jpg";
 
@@ -159,12 +159,10 @@ Sparky({
 ⊱ ─────── { 𑁍 } ─────── ⊰
 ╰┈⪼ 𝘗𝘰𝘸𝘦𝘳𝘦𝘥 𝘉𝘺 ${botName} ⪻
 ⊱ ─────── { 𑁍 } ─────── ⊰
-
 💡 *භාවිතය*
 📌 *අංකයක් එවන්න* :
 • ${m.prefix || "."}menu 1  → DOWNLOAD
 • ${m.prefix || "."}menu 2  → AI
-• ${m.prefix || "."}menu 8  → SONG
 `;
 
         const menuImageUrl = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1780590033/zanta_media_uploads/dttqjshprca9zvqcpbwg.jpg";
@@ -179,39 +177,8 @@ Sparky({
         
     } catch (e) {
         console.log("Menu error:", e);
+        console.log("Error stack:", e.stack);
         m.reply(`❌ සමාවන්න, මෙනුව පෙන්වන්න බැරි වුණා.\n\n📝 *Error:* ${e.message}\n\n💡 උපදෙස්: ${m.prefix || "."}help`);
     }
 });
 
-// Explicit Commands (.menu 1 etc)
-for (let i = 1; i <= 8; i++) {
-    Sparky({
-        name: `menu ${i}`,
-        category: "misc",
-        fromMe: isPublic,
-        dontAddCommandList: true,
-        desc: `Category ${i} මෙනුව පෙන්වීමට`
-    }, async ({ client, m }) => {
-        await showCategoryMenu(client, m, i, m.prefix || ".");
-    });
-}
-
-// Reply listener
-Sparky({
-    name: "menureply",
-    pattern: /^\d+$/,
-    dontPrefix: true, 
-    fromMe: false,
-    dontAddCommandList: true,
-    desc: "Internal handler for menu number replies"
-}, async ({ client, m, args }) => {
-    if (!m.quoted) return;
-    const quotedId = m.quoted.key.id;
-    if (!global.menuMsgIds || !global.menuMsgIds.has(quotedId)) return;
-    
-    const number = parseInt(m.text || args[0]);
-    if (isNaN(number) || number < 1 || number > 8) return;
-    
-    const prefix = m.prefix || ".";
-    await showCategoryMenu(client, m, number, prefix);
-});
