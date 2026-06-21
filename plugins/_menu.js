@@ -135,57 +135,30 @@ Sparky({
         let botName = config.BOT_INFO ? config.BOT_INFO.split(";")[0] : "SADEW MINI";
         
         let mainMenu = `
-╔══════════════════════════════════╗
-║        🤖 ${botName}                ║
-║      ✨ MAIN MENU ✨               ║
-╚══════════════════════════════════╝
-
-┌──────────────────────────────────┐
-│         👤 USER INFO              │
-├──────────────────────────────────┤
-│ 🏷 නම     : ${m.pushName || "Guest"}
-│ 🔖 මාදිලිය  : ${config.WORK_TYPE || "Public"}
-│ 📅 දිනය    : ${date}
-│ ⏰ වේලාව    : ${time}
-│ ⚡ වැඩ කල කාලය : ${uptime}
-│ 📦 ප්ලගින් : ${commands ? (Array.isArray(commands) ? commands.length : 0) : 0}
-│ 🔰 පෙරවරු : ${m.prefix || "."}
-└──────────────────────────────────┘
-
+┌──⟡ 🤖 ${botName} ⟡──
+┊
+┠⪼✿ ✦ 👤 𝓝𝓪𝓶𝓮   : ${m.pushName || "Guest"}
+┠⪼✿ ✦ 🔖 𝓜𝓸𝓭𝓮   : ${config.WORK_TYPE || "Public"}
+┠⪼✿ ✦ 📅 𝓓𝓪𝓽𝓮   : ${date}
+┠⪼✿ ✦ ⏰ 𝓣𝓲𝓶𝓮   : ${time}
+┠⪼✿ ✦ ⚡ 𝓤𝓹𝓽𝓲𝓶𝓮 : ${uptime}
+┠⪼✿ ✦ 📦 𝓟𝓵𝓾𝓰𝓲𝓷𝓼: ${commands ? (Array.isArray(commands) ? commands.length : 0) : 0}
+┠⪼✿ ✦ 🔰 𝓟𝓻𝓮𝓯𝓲𝔁 : ${m.prefix || "."}
+┊
+└──⟡ ━━━━━━━━━━━━━━━━ ⟡
 ┏━━━━『 𝐂𝐀𝐓𝐄𝐆𝐎𝐑𝐈𝐄𝐒 』━━━━━
-┣⪼ ❖ 1. 📥 Download Menu
-┣⪼ ❖ 2. 🧠 AI Commands
-┣⪼ ❖ 3. 👥 Group Manage
-┣⪼ ❖ 4. ⚙️ Admin Menu
-┣⪼ ❖ 5. 🔧 Tools & Edits
-┣⪼ ❖ 6. 👑 Owner Area
-┣⪼ ❖ 7. 📁 Other Cmds
-┣⪼ ❖ 8. 🎵 Song & Music
+┣⪼ ❖ 1. 📥 Download Menu✿
+┣⪼ ❖ 2. 🧠 AI Commands✿
+┣⪼ ❖ 3. 👥 Group Manage✿
+┣⪼ ❖ 4. ⚙️ Admin Menu✿
+┣⪼ ❖ 5. 🔧 Tools & Edits✿
+┣⪼ ❖ 6. 👑 Owner Area✿
+┣⪼ ❖ 7. 📁 Other Cmds✿
+┣⪼ ❖ 8. 🎵 Song & Music✿
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━
-
-┌──────────────────────────────────┐
-│         💡 HOW TO USE             │
-├──────────────────────────────────┤
-│                                  
-│  📌 *අංකයක් එවන්න* :                
-│                                  
-│     • ${m.prefix || "."}menu 1  → DOWNLOAD
-│     • ${m.prefix || "."}menu 2  → AI
-│     • ${m.prefix || "."}menu 3  → GROUP
-│     • ${m.prefix || "."}menu 4  → ADMIN
-│     • ${m.prefix || "."}menu 5  → TOOLS
-│     • ${m.prefix || "."}menu 6  → OWNER
-│     • ${m.prefix || "."}menu 7  → OTHER
-│     • ${m.prefix || "."}menu 8  → SONG
-│
-│  🆕 *නැත්නම්:* මෙම පණිවිඩයට *Reply* කර අංකය පමණක් එවන්න.
-│     (උදා: Reply with "1" → DOWNLOAD menu)
-│
-└──────────────────────────────────┘
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     💫 POWERED BY ${botName} 💫
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⊱ ─────── { 𑁍 } ─────── ⊰
+╰┈⪼ 𝘗𝘰𝘸𝘦𝘳𝘦𝘥 𝘉𝘺 ${botName} ⪻
+⊱ ─────── { 𑁍 } ─────── ⊰
 `;
 
         const menuImageUrl = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1780590033/zanta_media_uploads/dttqjshprca9zvqcpbwg.jpg";
