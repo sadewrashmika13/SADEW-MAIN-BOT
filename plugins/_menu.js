@@ -5,6 +5,9 @@ const {
 } = require("../lib");
 const config = require("../config.js");
 
+// Buttons යවන්න අවශ්‍ය Baileys Packages
+const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require("@whiskeysockets/baileys");
+
 // Global set to track main menu message IDs
 if (!global.menuMsgIds) global.menuMsgIds = new Set();
 
@@ -134,6 +137,7 @@ Sparky({
         
         let botName = config.BOT_INFO ? config.BOT_INFO.split(";")[0] : "SADEW MINI";
         
+        // ඔයා දුන්න ලස්සන Text Layout එක ඒ විදිහටම තියෙනවා
         let mainMenu = `
 ┌──⟡ 🤖 ${botName} ⟡──
 ┊
@@ -163,13 +167,51 @@ Sparky({
 
         const menuImageUrl = config.MENU_IMAGE_URL || "https://res.cloudinary.com/dqlh378fb/image/upload/v1780590033/zanta_media_uploads/dttqjshprca9zvqcpbwg.jpg";
         
-        const sentMsg = await client.sendMessage(m.jid, {
-            image: { url: menuImageUrl },
-            caption: mainMenu
+        // ෆොටෝ එක Process කිරීම
+        let mediaMsg = await prepareWAMessageMedia({ image: { url: menuImageUrl } }, { upload: client.waUploadToServer });
+
+        // යටින් වැටෙන Buttons ටික සෙට් කිරීම
+        let buttons = [
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📥 DOWNLOAD MENU", id: `${m.prefix || "."}menu 1` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🧠 AI COMMANDS", id: `${m.prefix || "."}menu 2` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "👥 GROUP MANAGE", id: `${m.prefix || "."}menu 3` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚙️ ADMIN MENU", id: `${m.prefix || "."}menu 4` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🔧 TOOLS & EDITS", id: `${m.prefix || "."}menu 5` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "👑 OWNER AREA", id: `${m.prefix || "."}menu 6` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📁 OTHER CMDS", id: `${m.prefix || "."}menu 7` }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🎵 SONG & MUSIC", id: `${m.prefix || "."}menu 8` }) }
+        ];
+
+        // Interactive Message එක හැදීම (Zanta-MD View Once Style)
+        let interactiveMessage = {
+            body: { text: mainMenu },
+            footer: { text: "👇 කරුණාකර පහත මෙනුවකින් එකක් තෝරන්න" },
+            header: {
+                title: "",
+                hasMediaAttachment: true,
+                imageMessage: mediaMsg.imageMessage
+            },
+            nativeFlowMessage: {
+                buttons: buttons
+            }
+        };
+
+        let msg = generateWAMessageFromContent(m.jid, {
+            viewOnceMessage: {
+                message: {
+                    messageContextInfo: {
+                        deviceListMetadata: {},
+                        deviceListMetadataVersion: 2
+                    },
+                    interactiveMessage: interactiveMessage
+                }
+            }
         }, { quoted: m });
+
+        const sentMsg = await client.relayMessage(m.jid, msg.message, { messageId: msg.key.id });
         
-        global.menuMsgIds.add(sentMsg.key.id);
-        setTimeout(() => global.menuMsgIds.delete(sentMsg.key.id), 5 * 60 * 1000);
+        global.menuMsgIds.add(msg.key.id);
+        setTimeout(() => global.menuMsgIds.delete(msg.key.id), 5 * 60 * 1000);
         
     } catch (e) {
         console.log("Menu error:", e);
@@ -177,6 +219,19 @@ Sparky({
         m.reply(`❌ සමාවන්න, මෙනුව පෙන්වන්න බැරි වුණා.\n\n📝 *Error:* ${e.message}\n\n💡 උපදෙස්: ${m.prefix || "."}help`);
     }
 });
+
+// Button Clicks අල්ලගන්න වෙනම Commands ටික (Safe Fallback)
+for (let i = 1; i <= 8; i++) {
+    Sparky({
+        name: `menu ${i}`,
+        category: "misc",
+        fromMe: isPublic,
+        dontAddCommandList: true,
+        desc: `Category ${i} මෙනුව පෙන්වීමට`
+    }, async ({ client, m }) => {
+        await showCategoryMenu(client, m, i, m.prefix || ".");
+    });
+}
 
 // Command to capture replies with just a number
 Sparky({
