@@ -12,8 +12,6 @@ const EMOJI_ERROR = "\u274C";
 
 const STYLE_INSTRUCTION = "Reply in a natural Sinhala and English mixed style.nutural sinhala kind friendly sinhala latters.don'tUse singlish.use friendly clear Sinhala-English mix like a Sri Lankan WhatsApp chat.";
 
-// --- Helper Functions ---
-
 function getJid(m) {
     return m.jid || m.chat || m.from || m.key?.remoteJid;
 }
@@ -73,47 +71,51 @@ async function downloadMedia(message, type) {
     return buffer;
 }
 
-// Image Uploader (Uguu + Tmpfiles)
+// 🔴 BULLETPROOF MULTI-UPLOADER (Direct Links Only!)
 async function uploadImageToUrl(buffer, mimeType) {
     const ext = mimeType.split("/")[1] || "jpeg";
     const filename = `file_${Date.now()}.${ext}`;
-    let finalUrl = null;
 
-    try {
-        const bodyForm1 = new FormData();
-        bodyForm1.append("files[]", buffer, { filename, contentType: mimeType });
-        const res1 = await axios.post("https://uguu.se/api.php?d=upload-tool", bodyForm1, {
-            headers: bodyForm1.getHeaders()
-        });
-        if (res1.data && res1.data.includes("http")) finalUrl = res1.data.trim();
-    } catch (e) {
-        console.log("Uguu failed, trying Tmpfiles...");
-    }
+    const uploaders = [
+        async () => {
+            let form = new FormData();
+            form.append("files[]", buffer, { filename, contentType: mimeType });
+            let { data } = await axios.post("https://qu.ax/upload.php", form, { headers: form.getHeaders() });
+            return data.files[0].url;
+        },
+        async () => {
+            let form = new FormData();
+            form.append("files[]", buffer, { filename, contentType: mimeType });
+            let { data } = await axios.post("https://pomf2.lain.la/upload.php", form, { headers: form.getHeaders() });
+            return data.files[0].url;
+        },
+        async () => {
+            let form = new FormData();
+            form.append("files[]", buffer, { filename, contentType: mimeType });
+            let { data } = await axios.post("https://uguu.se/api.php?d=upload-tool", form, { headers: form.getHeaders() });
+            return data.trim();
+        }
+    ];
 
-    if (!finalUrl) {
+    for (let upload of uploaders) {
         try {
-            const bodyForm2 = new FormData();
-            bodyForm2.append("file", buffer, { filename, contentType: mimeType });
-            const res2 = await axios.post("https://tmpfiles.org/api/v1/upload", bodyForm2, {
-                headers: bodyForm2.getHeaders()
-            });
-            if (res2.data && res2.data.status === "success") {
-                finalUrl = res2.data.data.url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
-            }
+            let url = await upload();
+            if (url && url.startsWith("http")) return url;
         } catch (e) {
-            throw new Error("සියලුම Image Uploader සර්වර් අක්‍රියයි.");
+            console.log("Uploader switched...");
+            continue;
         }
     }
-    return finalUrl;
+    throw new Error("සියලුම Image Uploader සර්වර් අක්‍රියයි.");
 }
 
 // 🔴 MULTI-API SYSTEM FOR TEXT
 async function askGeminiText(prompt) {
     const q = `${prompt}\n\n${STYLE_INSTRUCTION}`;
     const apiList = [
+        { url: "https://whiteshadow-x-api.onrender.com/api/ai/gemini", params: { q: q, apitoken: API_TOKEN } },
         { url: "https://api.siputzx.my.id/api/ai/gemini", params: { content: q } },
-        { url: "https://api.giftedtech.my.id/api/ai/geminiai", params: { apikey: "gifted", q: q } },
-        { url: "https://whiteshadow-x-api.onrender.com/api/ai/gemini", params: { q: q, apitoken: API_TOKEN } }
+        { url: "https://api.giftedtech.my.id/api/ai/geminiai", params: { apikey: "gifted", q: q } }
     ];
 
     for (let api of apiList) {
@@ -124,13 +126,11 @@ async function askGeminiText(prompt) {
                 headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" }
             });
             
-            // HTML ආවොත් මේ API එක අතෑරලා ඊළඟ එකට යනවා
             if (typeof data === "string" && data.trim().startsWith("<")) continue;
-            
             const answer = extractTextFromObject(data);
             if (answer) return answer;
         } catch (e) {
-            continue; // Error ආවොත් ඊළඟ API එක ට්‍රයි කරනවා
+            continue; 
         }
     }
     throw new Error("සියලුම AI සර්වර් මේ මොහොතේ කාර්යබහුලයි හෝ අවහිර කර ඇත.");
@@ -140,8 +140,9 @@ async function askGeminiText(prompt) {
 async function askGeminiVision(prompt, imageUrl) {
     const q = `${prompt}\n\n${STYLE_INSTRUCTION}`;
     const apiList = [
+        { url: "https://widipe.com/gemini", params: { url: imageUrl, text: q } },
         { url: "https://api.siputzx.my.id/api/ai/gemini-image", params: { url: imageUrl, text: q } },
-        { url: "https://api.yanzbotz.my.id/api/ai/geminiImage", params: { url: imageUrl, query: q } },
+        { url: "https://api.giftedtech.my.id/api/ai/geminivision", params: { apikey: "gifted", q: q, url: imageUrl } },
         { url: "https://api.bk9.site/ai/geminiimg", params: { q: q, url: imageUrl } }
     ];
 
@@ -153,13 +154,12 @@ async function askGeminiVision(prompt, imageUrl) {
                 headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" }
             });
 
-            // HTML ආවොත් මේ API එක අතෑරලා ඊළඟ එකට යනවා
             if (typeof data === "string" && data.trim().startsWith("<")) continue;
 
             const answer = extractTextFromObject(data);
             if (answer) return answer;
         } catch (e) {
-            continue; // Error ආවොත් ඊළඟ API එක ට්‍රයි කරනවා
+            continue; 
         }
     }
     throw new Error("සියලුම Image Vision සර්වර් මේ මොහොතේ කාර්යබහුලයි හෝ අවහිර කර ඇත.");
