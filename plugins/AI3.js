@@ -71,42 +71,38 @@ async function downloadMedia(message, type) {
     return buffer;
 }
 
-// 🔴 BULLETPROOF MULTI-UPLOADER (Direct Links Only!)
+// 🔴 BULLETPROOF MULTI-UPLOADER (100% Direct Links Only!)
 async function uploadImageToUrl(buffer, mimeType) {
     const ext = mimeType.split("/")[1] || "jpeg";
     const filename = `file_${Date.now()}.${ext}`;
 
-    const uploaders = [
-        async () => {
-            let form = new FormData();
-            form.append("files[]", buffer, { filename, contentType: mimeType });
-            let { data } = await axios.post("https://qu.ax/upload.php", form, { headers: form.getHeaders() });
-            return data.files[0].url;
-        },
-        async () => {
-            let form = new FormData();
-            form.append("files[]", buffer, { filename, contentType: mimeType });
-            let { data } = await axios.post("https://pomf2.lain.la/upload.php", form, { headers: form.getHeaders() });
-            return data.files[0].url;
-        },
-        async () => {
-            let form = new FormData();
-            form.append("files[]", buffer, { filename, contentType: mimeType });
-            let { data } = await axios.post("https://uguu.se/api.php?d=upload-tool", form, { headers: form.getHeaders() });
-            return data.trim();
+    // 1. ImgBB (Best - Never blocks AI APIs)
+    try {
+        let form = new FormData();
+        form.append("image", buffer.toString("base64"));
+        const res = await axios.post("https://api.imgbb.com/1/upload?key=6d207e02198a847aa98d0a2a901485a5", form);
+        if (res.data && res.data.data && res.data.data.url) {
+            console.log("Uploaded to ImgBB:", res.data.data.url);
+            return res.data.data.url;
         }
-    ];
-
-    for (let upload of uploaders) {
-        try {
-            let url = await upload();
-            if (url && url.startsWith("http")) return url;
-        } catch (e) {
-            console.log("Uploader switched...");
-            continue;
-        }
+    } catch (e) {
+        console.log("ImgBB Upload Failed.");
     }
-    throw new Error("සියලුම Image Uploader සර්වර් අක්‍රියයි.");
+
+    // 2. Pomf2 (Alternative Direct Link)
+    try {
+        let form = new FormData();
+        form.append("files[]", buffer, { filename, contentType: mimeType });
+        const res = await axios.post("https://pomf2.lain.la/upload.php", form, { headers: form.getHeaders() });
+        if (res.data && res.data.files && res.data.files[0].url) {
+            console.log("Uploaded to Pomf2:", res.data.files[0].url);
+            return res.data.files[0].url;
+        }
+    } catch (e) {
+        console.log("Pomf2 Upload Failed.");
+    }
+
+    throw new Error("ඡායාරූපය Upload කිරීම අසාර්ථක විය. (Uploaders Down)");
 }
 
 // 🔴 MULTI-API SYSTEM FOR TEXT
@@ -130,6 +126,7 @@ async function askGeminiText(prompt) {
             const answer = extractTextFromObject(data);
             if (answer) return answer;
         } catch (e) {
+            console.log(`Text API Failed (${api.url}):`, e.message);
             continue; 
         }
     }
@@ -140,10 +137,10 @@ async function askGeminiText(prompt) {
 async function askGeminiVision(prompt, imageUrl) {
     const q = `${prompt}\n\n${STYLE_INSTRUCTION}`;
     const apiList = [
-        { url: "https://widipe.com/gemini", params: { url: imageUrl, text: q } },
+        { url: "https://api.bk9.site/ai/geminiimg", params: { q: q, url: imageUrl } },
         { url: "https://api.siputzx.my.id/api/ai/gemini-image", params: { url: imageUrl, text: q } },
         { url: "https://api.giftedtech.my.id/api/ai/geminivision", params: { apikey: "gifted", q: q, url: imageUrl } },
-        { url: "https://api.bk9.site/ai/geminiimg", params: { q: q, url: imageUrl } }
+        { url: "https://widipe.com/gemini", params: { url: imageUrl, text: q } }
     ];
 
     for (let api of apiList) {
@@ -154,11 +151,15 @@ async function askGeminiVision(prompt, imageUrl) {
                 headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" }
             });
 
-            if (typeof data === "string" && data.trim().startsWith("<")) continue;
+            if (typeof data === "string" && data.trim().startsWith("<")) {
+                console.log(`Vision API Blocked by HTML (${api.url})`);
+                continue;
+            }
 
             const answer = extractTextFromObject(data);
             if (answer) return answer;
         } catch (e) {
+            console.log(`Vision API Failed (${api.url}):`, e.message);
             continue; 
         }
     }
