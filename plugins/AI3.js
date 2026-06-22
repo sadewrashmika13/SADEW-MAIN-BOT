@@ -64,7 +64,6 @@ async function sendText(m, client, text) {
     }
 }
 
-// 1. ෆොටෝ එක Download කරලා Buffer එකක් ගන්නවා
 async function downloadMedia(message, type) {
     const stream = await downloadContentFromMessage(message, type);
     let buffer = Buffer.from([]);
@@ -74,11 +73,102 @@ async function downloadMedia(message, type) {
     return buffer;
 }
 
-// 2. ෆොටෝ එක Catbox.moe එකට අප්ලෝඩ් කරලා Link එකක් ගන්නවා
 async function uploadImage(buffer) {
     try {
         let form = new FormData();
         form.append("reqtype", "fileupload");
         form.append("fileToUpload", buffer, { filename: "image.jpg", contentType: "image/jpeg" });
         
-        let { data } = await axios
+        let { data } = await axios.post("https://catbox.moe/user/api.php", form, {
+            headers: form.getHeaders()
+        });
+        
+        return data; 
+    } catch (e) {
+        throw new Error("Image Upload Failed (Catbox Error)");
+    }
+}
+
+async function askGeminiText(prompt) {
+    const q = `${prompt}\n\n${STYLE_INSTRUCTION}`;
+    const { data } = await axios.get(TEXT_API_URL, {
+        timeout: REQUEST_TIMEOUT_MS,
+        params: { q: q, apitoken: API_TOKEN },
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36"
+        }
+    });
+    const answer = extractTextFromObject(data);
+    if (!answer) throw new Error("API response is empty.");
+    return answer;
+}
+
+async function askGeminiVision(prompt, imageUrl) {
+    const q = `${prompt}\n\n${STYLE_INSTRUCTION}`;
+    const { data } = await axios.get(VISION_API_URL, {
+        timeout: REQUEST_TIMEOUT_MS,
+        params: { q: q, url: imageUrl },
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36"
+        }
+    });
+    const answer = extractTextFromObject(data);
+    if (!answer) throw new Error("Vision API response is empty.");
+    return answer;
+}
+
+// --- Main Command ---
+
+Sparky({
+    name: "ai3", 
+    fromMe: false,
+    category: "ai",
+    desc: "Chat with AI3 (Gemini Vision) in Sinhala-English mixed style (Supports Images).",
+}, async ({ m, client, args }) => {
+    
+    let prompt = getPrompt(args, m);
+    
+    let isImage = false;
+    let targetMessage = m.message;
+
+    if (m.quoted && m.quoted.message) {
+        let quotedType = Object.keys(m.quoted.message)[0];
+        if (quotedType === 'messageContextInfo') quotedType = Object.keys(m.quoted.message)[1];
+        if (quotedType === 'imageMessage') {
+            isImage = true;
+            targetMessage = m.quoted.message.imageMessage;
+            if (!prompt) prompt = "කරුණාකර මෙම ඡායාරූපය ගැන විස්තර කරන්න.";
+        }
+    } else if (m.message && m.message.imageMessage) {
+        isImage = true;
+        targetMessage = m.message.imageMessage;
+        if (!prompt) prompt = "කරුණාකර මෙම ඡායාරූපය ගැන විස්තර කරන්න.";
+    }
+
+    if (!prompt && !isImage) {
+        return sendText(m, client, `${EMOJI_ERROR} *Usage:* \`.ai3 oyage question eka\`\n\nExample: .ai3 Write a poem about nature`);
+    }
+
+    try {
+        await safeReact(m, EMOJI_THINKING);
+        await client.sendPresenceUpdate('composing', getJid(m));
+
+        let answer = "";
+
+        if (isImage) {
+            let imageBuffer = await downloadMedia(targetMessage, 'image');
+            let imageUrl = await uploadImage(imageBuffer);
+            answer = await askGeminiVision(prompt, imageUrl);
+        } else {
+            answer = await askGeminiText(prompt);
+        }
+
+        await sendText(m, client, answer);
+        await safeReact(m, EMOJI_DONE);
+
+    } catch (error) {
+        console.error("ai3 command error:", error);
+        await safeReact(m, EMOJI_ERROR);
+        return sendText(m, client, `${EMOJI_ERROR} AI3 reply eka ganna bari una.\nReason: ${error?.response?.data?.message || error.message || "Unknown Error"}`);
+    }
+}); // 🔴 මේ අන්තිම පේළිය අනිවාර්යයෙන්ම තියෙන්න ඕනේ!
