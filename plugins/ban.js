@@ -1,55 +1,57 @@
 // commands/ban.js
 const { Sparky, isPublic } = require("../lib");
+const config = require("../config");
 
-// Global ban list (persists as long as bot is running)
-// To make it persistent, you could save to database or file
+// Helper function to safely extract query string from args
+function getQuery(args) {
+    if (!args) return "";
+    if (Array.isArray(args)) return args.join(" ").trim();
+    if (typeof args === "string") return args.trim();
+    if (typeof args === "object") return Object.values(args).join(" ").trim();
+    return "";
+}
+
+// Global ban list (in-memory)
 if (!global.banList) global.banList = new Map();
 
 Sparky({
     name: "ban",
     category: "owner",
-    fromMe: true,  // Only bot owner can use
-    desc: "🔨 භාවිතාකරුවෙකු WhatsApp බොට් එකෙන් තහනම් කරන්න (JID)"
+    fromMe: true,
+    desc: "🔨 භාවිතාකරුවෙකු WhatsApp බොට් එකෙන් තහනම් කරන්න"
 }, async ({ client, m, args }) => {
     try {
-        // Check if user provided a target
-        let target = args.join(" ").trim();
+        let target = getQuery(args);
         if (!target) {
-            return m.reply(`🔨 *Ban Command*
+            // Reply to quoted message
+            if (m.quoted && m.quoted.sender) {
+                target = m.quoted.sender;
+            } else {
+                return m.reply(`🔨 *Ban Command*
 
 *Usage:* ${m.prefix}ban <@mention or phone number>
 *Example:* ${m.prefix}ban 94712345678
-*Example:* ${m.prefix}ban @user
-
-*Note:* You can reply to a user's message with .ban to ban them.`);
+*Or reply to a user's message with* .ban`);
+            }
         }
 
         let targetJid = null;
         let targetName = "Unknown User";
 
-        // Case 1: Reply to a message
-        if (m.quoted && m.quoted.sender) {
-            targetJid = m.quoted.sender;
-            targetName = m.quoted.pushName || "Unknown User";
-        }
-
-        // Case 2: Mention (@) or phone number
-        if (!targetJid) {
-            // If it's a mention (contains @)
-            if (target.includes("@")) {
-                targetJid = target;
-                if (!targetJid.includes("@s.whatsapp.net") && !targetJid.includes("@g.us")) {
-                    targetJid = targetJid.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
-                }
-            } 
-            // If it's a phone number
-            else {
-                let cleanNumber = target.replace(/[^0-9]/g, "");
-                if (cleanNumber.length < 10) {
-                    return m.reply(`❌ *Invalid phone number!*\nPlease provide a valid number with country code.`);
-                }
-                targetJid = cleanNumber + "@s.whatsapp.net";
+        // If target is already a JID (contains @)
+        if (target.includes("@")) {
+            targetJid = target;
+            if (!targetJid.includes("@s.whatsapp.net") && !targetJid.includes("@g.us")) {
+                targetJid = targetJid.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
             }
+        } 
+        // If it's a phone number
+        else {
+            let cleanNumber = target.replace(/[^0-9]/g, "");
+            if (cleanNumber.length < 10) {
+                return m.reply(`❌ *Invalid phone number!*\nPlease provide a valid number with country code.`);
+            }
+            targetJid = cleanNumber + "@s.whatsapp.net";
         }
 
         // Don't ban yourself
@@ -58,7 +60,7 @@ Sparky({
         }
 
         // Don't ban the bot owner
-        const ownerJid = config.SUDO ? config.SUDO.split(",")[0] + "@s.whatsapp.net" : null;
+        const ownerJid = config.SUDO ? config.SUDO.split(",")[0].trim() + "@s.whatsapp.net" : null;
         if (targetJid === ownerJid) {
             return m.reply(`❌ *Cannot ban the bot owner!*`);
         }
