@@ -1,90 +1,84 @@
-const { Sparky } = require("../lib");
+// commands/ban.js
+const { Sparky, isPublic } = require("../lib");
 
-// Global banned list එකක් මතකයේ තබා ගැනීමට හදාගන්නවා
-if (!global.bannedList) {
-    global.bannedList = [];
-}
+// Global ban list (persists as long as bot is running)
+// To make it persistent, you could save to database or file
+if (!global.banList) global.banList = new Map();
 
-// ================= BAN COMMAND =================
 Sparky({
-    pattern: "ban",
-    fromMe: true, // බොට්ගේ අයිතිකරුට (ඔයාට) පමණක් පාවිච්චි කළ හැක
-    desc: "පරිශීලකයෙකු බෑන් කරයි",
-    category: "owner"
-}, async (chat) => {
+    name: "ban",
+    category: "owner",
+    fromMe: true,  // Only bot owner can use
+    desc: "🔨 භාවිතාකරුවෙකු WhatsApp බොට් එකෙන් තහනම් කරන්න (JID)"
+}, async ({ client, m, args }) => {
     try {
-        let userToBan = "";
+        // Check if user provided a target
+        let target = args.join(" ").trim();
+        if (!target) {
+            return m.reply(`🔨 *Ban Command*
 
-        // 1. මැසේජ් එකකට රිප්ලයි කරලා නම්
-        if (chat.reply_message && chat.reply_message.sender) {
-            userToBan = chat.reply_message.sender;
-        } 
-        // 2. මැසේජ් එකේ කාවහරි ටැග් කරලා නම්
-        else if (chat.mentionedJid && chat.mentionedJid.length > 0) {
-            userToBan = chat.mentionedJid[0];
-        } 
-        // 3. Inbox එකේදී කෙලින්ම නම්
-        else if (!chat.isGroup) {
-            userToBan = chat.chat;
+*Usage:* ${m.prefix}ban <@mention or phone number>
+*Example:* ${m.prefix}ban 94712345678
+*Example:* ${m.prefix}ban @user
+
+*Note:* You can reply to a user's message with .ban to ban them.`);
         }
 
-        // බෑන් කරන්න කෙනෙක් හොයාගන්න බැරි වුනොත්
-        if (!userToBan || userToBan === "") {
-            return await chat.reply("❌ කරුණාකර බෑන් කිරීමට අවශ්‍ය කෙනාගේ මැසේජ් එකකට රිප්ලයි කරන්න හෝ @ කරලා ටැග් කරන්න.");
+        let targetJid = null;
+        let targetName = "Unknown User";
+
+        // Case 1: Reply to a message
+        if (m.quoted && m.quoted.sender) {
+            targetJid = m.quoted.sender;
+            targetName = m.quoted.pushName || "Unknown User";
         }
 
-        // දැනටමත් බෑන් කරලද බලනවා
-        if (global.bannedList.includes(userToBan)) {
-            return await chat.reply("ℹ️ මෙම පරිශීලකයා දැනටමත් බෑන් කර ඇත.");
+        // Case 2: Mention (@) or phone number
+        if (!targetJid) {
+            // If it's a mention (contains @)
+            if (target.includes("@")) {
+                targetJid = target;
+                if (!targetJid.includes("@s.whatsapp.net") && !targetJid.includes("@g.us")) {
+                    targetJid = targetJid.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
+                }
+            } 
+            // If it's a phone number
+            else {
+                let cleanNumber = target.replace(/[^0-9]/g, "");
+                if (cleanNumber.length < 10) {
+                    return m.reply(`❌ *Invalid phone number!*\nPlease provide a valid number with country code.`);
+                }
+                targetJid = cleanNumber + "@s.whatsapp.net";
+            }
         }
 
-        // ලිස්ට් එකට එකතු කරනවා
-        global.bannedList.push(userToBan);
-        console.log(`[SADEW MD] Banned successfully: ${userToBan}`); // GitHub Actions logs වල බලාගන්න
+        // Don't ban yourself
+        if (targetJid === m.sender) {
+            return m.reply(`❌ *Cannot ban yourself!*`);
+        }
 
-        let jidNum = userToBan.split("@")[0];
-        return await chat.reply(`🚫 @${jidNum} ව සාර්ථකව බෑන් කරන ලදී! දැන් ඔහුට බොට් වැඩ කරන්නේ නැත.`, { mentions: [userToBan] });
+        // Don't ban the bot owner
+        const ownerJid = config.SUDO ? config.SUDO.split(",")[0] + "@s.whatsapp.net" : null;
+        if (targetJid === ownerJid) {
+            return m.reply(`❌ *Cannot ban the bot owner!*`);
+        }
+
+        // Check if already banned
+        if (global.banList.has(targetJid)) {
+            return m.reply(`⚠️ *Already banned!*\n\n👤 *User:* ${targetName}\n📱 *JID:* ${targetJid}\n📅 *Banned on:* ${global.banList.get(targetJid).date}`);
+        }
+
+        // Ban the user
+        global.banList.set(targetJid, {
+            date: new Date().toLocaleString(),
+            bannedBy: m.sender
+        });
+
+        await m.reply(`🔨 *User Banned!*\n\n👤 *User:* ${targetName}\n📱 *JID:* ${targetJid}\n📅 *Date:* ${new Date().toLocaleString()}\n\n❌ This user can no longer use the bot.`);
+        await m.react("🔨");
 
     } catch (error) {
-        console.error(error);
-        return await chat.reply("❌ Error එකක් වුණා: " + error.message);
-    }
-});
-
-// ================= UNBAN COMMAND =================
-Sparky({
-    pattern: "unban",
-    fromMe: true,
-    desc: "බෑන් ඉවත් කරයි",
-    category: "owner"
-}, async (chat) => {
-    try {
-        let userToUnban = "";
-
-        if (chat.reply_message && chat.reply_message.sender) {
-            userToUnban = chat.reply_message.sender;
-        } else if (chat.mentionedJid && chat.mentionedJid.length > 0) {
-            userToUnban = chat.mentionedJid[0];
-        } else if (!chat.isGroup) {
-            userToUnban = chat.chat;
-        }
-
-        if (!userToUnban || userToUnban === "") {
-            return await chat.reply("❌ කරුණාකර අන්බෑන් කිරීමට අවශ්‍ය කෙනාගේ මැසේජ් එකකට රිප්ලයි කරන්න.");
-        }
-
-        if (!global.bannedList.includes(userToUnban)) {
-            return await chat.reply("ℹ️ මෙම පරිශීලකයා බෑන් කර නොමැත.");
-        }
-
-        // ලිස්ට් එකෙන් අයින් කරනවා
-        global.bannedList = global.bannedList.filter(u => u !== userToUnban);
-        console.log(`[SADEW MD] Unbanned successfully: ${userToUnban}`);
-
-        let jidNum = userToUnban.split("@")[0];
-        return await chat.reply(`✅ @${jidNum} ව සාර්ථකව අන්බෑන් කරන ලදී!`, { mentions: [userToUnban] });
-
-    } catch (error) {
-        return await chat.reply("❌ Error එකක් වුණා: " + error.message);
+        console.error("Ban error:", error);
+        m.reply(`❌ *Ban failed:* ${error.message.substring(0, 100)}`);
     }
 });
