@@ -6,13 +6,12 @@ const fs = require("fs");
 // ---------- BAN LIST STORAGE ----------
 const BAN_FILE = "./banned.json";
 
-// Load bans from file (persistent)
 if (!global.banList) {
     try {
         if (fs.existsSync(BAN_FILE)) {
             const data = JSON.parse(fs.readFileSync(BAN_FILE));
             global.banList = new Map(Object.entries(data));
-            console.log(`[BAN] Loaded ${global.banList.size} banned users from file`);
+            console.log(`[BAN] Loaded ${global.banList.size} banned users`);
         } else {
             global.banList = new Map();
         }
@@ -21,14 +20,11 @@ if (!global.banList) {
     }
 }
 
-// Save bans to file
 function saveBans() {
     try {
         const obj = Object.fromEntries(global.banList);
         fs.writeFileSync(BAN_FILE, JSON.stringify(obj, null, 2));
-    } catch (e) {
-        console.error("[BAN] Failed to save bans:", e);
-    }
+    } catch (e) {}
 }
 
 function getQuery(args) {
@@ -40,39 +36,70 @@ function getQuery(args) {
 }
 
 // ==========================================
-// 🔥 BAN CHECK - Runs BEFORE any command
+// 🔥 EVENT LISTENER - Runs on EVERY message
 // ==========================================
-Sparky({
-    name: "_bancheck",
-    pattern: /(.*)/,           // Matches EVERY message
-    dontAddCommandList: true,
-    fromMe: false,
-    desc: "Internal ban check"
-}, async ({ client, m }) => {
-    // Ignore bot's own messages
-    if (m.key.fromMe) return;
-
-    const sender = m.key.remoteJid || m.key.participant || m.sender;
-    
-    // Check if sender is banned
-    if (global.banList && global.banList.has(sender)) {
-        console.log(`⛔ Banned user blocked: ${sender}`);
-        
-        // Optional: Send warning (only once per session)
-        if (!global._bannedWarned) global._bannedWarned = new Set();
-        if (!global._bannedWarned.has(sender)) {
-            global._bannedWarned.add(sender);
-            try {
-                await client.sendMessage(sender, { 
-                    text: "⛔ *You are banned from using this bot!*\n\nIf you think this is a mistake, contact the bot owner." 
-                });
-            } catch (e) {}
-        }
-        
-        // Stop ALL further processing for this message
-        return;
+// This attaches directly to the Baileys client
+// Run this when the bot starts
+(async function setupBanListener() {
+    // Wait for the client to be available
+    // This will be called from index.js or when bot connects
+    if (global.client) {
+        attachBanListener(global.client);
     }
-});
+})();
+
+function attachBanListener(client) {
+    if (!client) return;
+    
+    // Remove any existing listeners to avoid duplicates
+    client.ev.off('messages.upsert', banMessageHandler);
+    client.ev.on('messages.upsert', banMessageHandler);
+    console.log('[BAN] ✅ Ban listener attached to client');
+}
+
+async function banMessageHandler(chatUpdate) {
+    try {
+        const m = chatUpdate.messages[0];
+        if (!m || !m.message) return;
+        if (m.key.fromMe) return;
+        
+        const sender = m.key.remoteJid || m.key.participant || m.sender;
+        if (!sender) return;
+        
+        // Check if sender is banned
+        if (global.banList && global.banList.has(sender)) {
+            console.log(`⛔ Banned user blocked: ${sender}`);
+            
+            // Optional: Send warning (once per session)
+            if (!global._bannedWarned) global._bannedWarned = new Set();
+            if (!global._bannedWarned.has(sender)) {
+                global._bannedWarned.add(sender);
+                try {
+                    const client = global.client;
+                    if (client) {
+                        await client.sendMessage(sender, { 
+                            text: "⛔ *You are banned from using this bot!*"
+                        });
+                    }
+                } catch (e) {}
+            }
+            
+            // 🔥 IMPORTANT: Stop the message from being processed further
+            // We can't truly "delete" the message, but we can flag it
+            // The Sparky command handler will check this flag
+            if (global._bannedMessages) {
+                global._bannedMessages.add(m.key.id);
+            }
+            
+            // Also set a flag on the message object
+            m._isBanned = true;
+            
+            return;
+        }
+    } catch (err) {
+        console.error('[BAN] Listener error:', err);
+    }
+}
 
 // ==========================================
 // 🔨 BAN COMMAND
@@ -84,9 +111,12 @@ Sparky({
     desc: "🔨 භාවිතාකරුවෙකු බොට් එකෙන් තහනම් කරන්න"
 }, async ({ client, m, args }) => {
     try {
+        // Store client globally for the listener
+        if (!global.client) global.client = client;
+        attachBanListener(client);
+
         let target = getQuery(args);
         
-        // If no args, try to get from quoted message
         if (!target) {
             if (m.quoted && m.quoted.sender) {
                 target = m.quoted.sender;
@@ -100,9 +130,7 @@ Sparky({
         }
 
         let targetJid = null;
-        let targetName = "Unknown User";
 
-        // Extract JID from various formats
         if (target.includes("@")) {
             targetJid = target;
             if (!targetJid.includes("@s.whatsapp.net") && !targetJid.includes("@g.us")) {
@@ -111,36 +139,32 @@ Sparky({
         } else {
             let cleanNumber = target.replace(/[^0-9]/g, "");
             if (cleanNumber.length < 10) {
-                return m.reply(`❌ *Invalid phone number!*\nPlease provide a valid number with country code.`);
+                return m.reply(`❌ *Invalid phone number!*`);
             }
             targetJid = cleanNumber + "@s.whatsapp.net";
         }
 
-        // Don't ban yourself
         if (targetJid === m.sender) {
             return m.reply(`❌ *Cannot ban yourself!*`);
         }
 
-        // Don't ban the bot owner
         const sudoList = config.SUDO ? config.SUDO.split(",").map(s => s.trim()) : [];
         const ownerJids = sudoList.map(num => num + "@s.whatsapp.net");
         if (ownerJids.includes(targetJid)) {
             return m.reply(`❌ *Cannot ban the bot owner!*`);
         }
 
-        // Check if already banned
         if (global.banList.has(targetJid)) {
-            return m.reply(`⚠️ *Already banned!*\n\n📱 *JID:* ${targetJid}\n📅 *Banned on:* ${global.banList.get(targetJid).date}`);
+            return m.reply(`⚠️ *Already banned!*\n\n📱 ${targetJid}`);
         }
 
-        // Ban the user
         global.banList.set(targetJid, {
             date: new Date().toLocaleString(),
             bannedBy: m.sender
         });
         saveBans();
 
-        await m.reply(`🔨 *User Banned!*\n\n📱 *JID:* ${targetJid}\n📅 *Date:* ${new Date().toLocaleString()}\n\n❌ This user can no longer use the bot.`);
+        await m.reply(`🔨 *User Banned!*\n\n📱 ${targetJid}\n📅 ${new Date().toLocaleString()}`);
         await m.react("🔨");
 
     } catch (error) {
@@ -159,22 +183,23 @@ Sparky({
     desc: "🔓 භාවිතාකරුවෙකු අවහිරය ඉවත් කරන්න"
 }, async ({ client, m, args }) => {
     try {
+        if (!global.client) global.client = client;
+
         let target = getQuery(args);
         
-        // Show list of banned users
         if (!target) {
             if (global.banList && global.banList.size > 0) {
-                let listMsg = `🔓 *Banned Users List*\n\n`;
+                let listMsg = `🔓 *Banned Users*\n\n`;
                 let count = 1;
                 for (const [jid, info] of global.banList) {
                     listMsg += `${count}. ${jid}\n`;
                     listMsg += `   📅 ${info.date}\n\n`;
                     count++;
                 }
-                listMsg += `📌 *To unban:* ${m.prefix}unban <JID or number>\nExample: ${m.prefix}unban 94712345678`;
+                listMsg += `📌 ${m.prefix}unban <number>`;
                 return m.reply(listMsg);
             } else {
-                return m.reply(`🔓 *No users are currently banned.*`);
+                return m.reply(`🔓 *No users are banned.*`);
             }
         }
 
@@ -190,16 +215,14 @@ Sparky({
             targetJid = target;
         }
 
-        // Check if user is banned
         if (!global.banList.has(targetJid)) {
-            return m.reply(`❌ *User is not banned!*\n\n📱 JID: ${targetJid}`);
+            return m.reply(`❌ *User is not banned!*`);
         }
 
-        // Unban the user
         global.banList.delete(targetJid);
         saveBans();
 
-        await m.reply(`🔓 *User Unbanned!*\n\n📱 *JID:* ${targetJid}\n📅 *Date:* ${new Date().toLocaleString()}\n\n✅ This user can now use the bot again.`);
+        await m.reply(`🔓 *User Unbanned!*\n\n📱 ${targetJid}`);
         await m.react("🔓");
 
     } catch (error) {
