@@ -126,7 +126,6 @@ Sparky(
                 console.error("[LOGO MAKER ERROR]:", error);
                 try { if (typeof m.react === "function") await m.react("❌"); } catch {}
                 
-                // 🔴 මෙතනින් තමයි හැංගිච්ච Error ඔක්කොම එළියට ගන්නේ
                 let detailedError = error.message;
                 
                 // Cause එකක් තියෙනවද බලනවා (Node.js 18+ වල ඇත්ත හේතුව තියෙන්නේ මෙතන)
