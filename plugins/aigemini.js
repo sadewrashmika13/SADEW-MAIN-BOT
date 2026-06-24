@@ -1,6 +1,6 @@
 // commands/ai4.js
 const { Sparky, isPublic } = require("../lib");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 const config = require("../config");
 
 // Get API key from environment (GitHub Secrets)
@@ -8,11 +8,38 @@ const API_KEY = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
 
 if (!API_KEY) {
     console.warn("⚠️ GEMINI_API_KEY not found in environment or config!");
+} else {
+    console.log(`✅ Gemini API Key loaded: ${API_KEY.substring(0, 15)}...`);
 }
 
-// Initialize Gemini
+// Check if API key has correct format
+if (API_KEY && !API_KEY.startsWith("AIzaSy")) {
+    console.warn("⚠️ Invalid Gemini API key format! It should start with 'AIzaSy'");
+}
+
+// Initialize Gemini with safety settings
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // or "gemini-1.5-pro"
+const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    safetySettings: [
+        {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        },
+    ],
+});
 
 function getQuery(args) {
     if (!args) return "";
@@ -30,7 +57,28 @@ Sparky({
     desc: "🖼️ Gemini AI වෙත ඡායාරූපයක් යවා විස්තර හෝ ප්‍රශ්න අසන්න"
 }, async ({ client, m, args }) => {
     try {
-        // ---------- 1. Get query text ----------
+        // ---------- 1. Check API key ----------
+        if (!API_KEY || API_KEY === "") {
+            return m.reply(`❌ *Gemini API key not configured!*
+
+කරුණාකර GitHub Secrets එකට \`GEMINI_API_KEY\` එකතු කරන්න.
+
+💡 *How to get API key:*
+1. Visit https://aistudio.google.com/app/apikey
+2. Create a new API key (starts with \`AIzaSy\`)
+3. Add it to GitHub Secrets as \`GEMINI_API_KEY\``);
+        }
+
+        if (!API_KEY.startsWith("AIzaSy")) {
+            return m.reply(`❌ *Invalid API key format!*
+
+Your API key should start with \`AIzaSy\`
+
+💡 Please get a valid key from:
+https://aistudio.google.com/app/apikey`);
+        }
+
+        // ---------- 2. Get query ----------
         const question = getQuery(args);
         if (!question) {
             return m.reply(`🖼️ *Gemini Image Analyzer*
@@ -42,12 +90,10 @@ Sparky({
 1. Send an image with the command, OR
 2. Reply to an image with the command
 
-*Aliases:* .aimg, .geminiimg, .imgai
-
-*Note:* API key is loaded from GitHub Secrets (GEMINI_API_KEY)`);
+*Note:* Requires valid Gemini API key (AIzaSy...)`);
         }
 
-        // ---------- 2. Get the image ----------
+        // ---------- 3. Get the image ----------
         let imageBuffer = null;
         let mimeType = "image/jpeg";
 
@@ -58,7 +104,6 @@ Sparky({
                 try {
                     imageBuffer = await m.quoted.download();
                     if (msgType === "videoMessage") {
-                        // Extract first frame? For now, treat as image.
                         mimeType = "video/mp4";
                     } else if (msgType === "stickerMessage") {
                         mimeType = "image/webp";
@@ -98,12 +143,12 @@ Sparky({
 2. Reply to an image: \`.ai4 මෙය කුමක්ද?\``);
         }
 
-        // ---------- 3. Prepare for Gemini ----------
+        // ---------- 4. Prepare for Gemini ----------
         await m.react("⏳");
         await client.sendPresenceUpdate('composing', m.jid);
         await m.reply(`🧠 *Gemini AI සිතමින්...*\n_ඡායාරූපය විශ්ලේෂණය වෙමින් පවතී. කරුණාකර රැඳී සිටින්න._`);
 
-        // ---------- 4. Convert image to base64 ----------
+        // ---------- 5. Convert image to base64 ----------
         const base64Image = imageBuffer.toString('base64');
         const imageData = {
             inlineData: {
@@ -112,7 +157,7 @@ Sparky({
             }
         };
 
-        // ---------- 5. Call Gemini ----------
+        // ---------- 6. Call Gemini ----------
         try {
             const result = await model.generateContent([
                 question,
@@ -121,26 +166,38 @@ Sparky({
             const response = result.response;
             const text = response.text();
 
-            // ---------- 6. Send response ----------
+            if (!text || text.trim() === "") {
+                throw new Error("Empty response from Gemini");
+            }
+
+            // ---------- 7. Send response ----------
             const replyMsg = `🖼️ *Gemini Image Analysis*\n\n📝 *Question:* ${question}\n\n📌 *Response:*\n${text}\n\n> *Powered by Google Gemini*`;
 
-            // Send the image back with caption? Optional, but we already have the image.
-            // If we want to send the image again with caption:
-            // await client.sendMessage(m.jid, { image: imageBuffer, caption: replyMsg }, { quoted: m });
-            // But to avoid duplication, just send text:
-            await m.reply(replyMsg);
+            // Check if message is too long
+            if (replyMsg.length > 4000) {
+                // Split into chunks
+                const chunks = replyMsg.match(/[\s\S]{1,4000}/g) || [replyMsg];
+                for (const chunk of chunks) {
+                    await m.reply(chunk);
+                }
+            } else {
+                await m.reply(replyMsg);
+            }
 
             await m.react("✅");
 
         } catch (err) {
             console.error("Gemini API error:", err);
             let errorMsg = `❌ *Gemini API error*\n\n`;
-            if (err.message.includes("API key")) {
-                errorMsg += `API key එක වලංගු නැහැ. කරුණාකර GEMINI_API_KEY GitHub Secrets එකේ හරිද පරීක්ෂා කරන්න.`;
+            
+            if (err.message.includes("API key") || err.message.includes("401") || err.message.includes("Unauthorized")) {
+                errorMsg += `API key එක වලංගු නැහැ.\n\n💡 *විසඳුම:*\n1. https://aistudio.google.com/app/apikey වෙත යන්න\n2. නව API key එකක් හදාගන්න (AIzaSy...)\n3. GitHub Secrets එකට \`GEMINI_API_KEY\` ලෙස එකතු කරන්න`;
             } else if (err.message.includes("safety")) {
                 errorMsg += `ආරක්ෂක හේතූන් මත මෙම ඡායාරූපය විශ්ලේෂණය කළ නොහැක.`;
-            } else if (err.message.includes("rate")) {
-                errorMsg += `API rate limit එක ඉක්මවා ගියා. ටික වෙලාවකින් නැවත උත්සාහ කරන්න.`;
+            } else if (err.message.includes("rate") || err.message.includes("quota")) {
+                errorMsg += `API rate limit එක ඉක්මවා ගියා.\n⏳ විනාඩි 1-2කින් නැවත උත්සාහ කරන්න.`;
+            } else if (err.message.includes("timeout")) {
+                errorMsg += `Request timeout. ඡායාරූපය ඉතා විශාල විය හැකියි.\n💡 කුඩා ඡායාරූපයක් උත්සාහ කරන්න.`;
             } else {
                 errorMsg += `Error: ${err.message.substring(0, 200)}`;
             }
