@@ -31,7 +31,9 @@ Sparky(
         desc: "Generate HD Logos using TextPro APIs",
     },
     async ({ m, client, args }) => {
-        let textToGenerate = args.join(" ").trim();
+        
+        // 🔴 FIX: args අවුල හදපු තැන
+        let textToGenerate = Array.isArray(args) ? args.join(" ").trim() : String(args || "").trim();
 
         if (!textToGenerate) {
             return m.reply("❌ *කරුණාකර නමක් ලබා දෙන්න.*\n\n*උදාහරණ:* `.logo Sadew`");
@@ -43,21 +45,25 @@ Sparky(
         menuText += `*කරුණාකර පහත ලැයිස්තුවෙන් ඔබට අවශ්‍ය Logo Effect එකේ අංකය මෙම පණිවිඩයට Reply කරන්න:*\n\n`;
         
         textProEffects.forEach((effect, index) => {
-            // නම ලස්සනට පේන්න හදනවා (උදා: "neon-blue" -> "Neon Blue")
             let cleanName = effect.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             menuText += `*${index + 1}.* ${cleanName}\n`;
         });
 
         menuText += `\n*Reply only with the number (e.g., 12)*`;
 
-        // මෙනු එක Send කරනවා
-        let sentMsg = await client.sendMessage(m.jid, { text: menuText }, { quoted: m });
+        try {
+            // මෙනු එක Send කරනවා
+            let sentMsg = await client.sendMessage(m.jid, { text: menuText }, { quoted: m });
 
-        // User ගේ Memory එකට Message ID එකයි Text එකයි සේව් කරනවා
-        global.logoPluginContext[m.sender] = { 
-            quotedId: sentMsg.key.id, 
-            data: textToGenerate 
-        };
+            // User ගේ Memory එකට Message ID එකයි Text එකයි සේව් කරනවා
+            global.logoPluginContext[m.sender] = { 
+                quotedId: sentMsg.key.id, 
+                data: textToGenerate 
+            };
+        } catch (err) {
+            console.error("Menu Send Error:", err);
+            m.reply("❌ *මෙනුව යැවීමට නොහැකි විය.*");
+        }
     }
 );
 
@@ -84,7 +90,7 @@ Sparky(
                 return m.reply("❌ *කරුණාකර ලැයිස්තුවේ ඇති නිවැරදි අංකයක් පමණක් Reply කරන්න.*");
             }
 
-            // අංකය හරි නම්, Memory එක අනිවාර්යයෙන්ම මකනවා (ඔයාගේ Rules වලට අනුව)
+            // අංකය හරි නම්, Memory එක අනිවාර්යයෙන්ම මකනවා
             let textToGenerate = context.data;
             delete global.logoPluginContext[m.sender];
 
@@ -96,13 +102,12 @@ Sparky(
             let selectedEffect = textProEffects[choice - 1];
             let cleanName = selectedEffect.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
+            // ✅ XWOLF API එක (GET request)
             const API_KEY = "wxa_f_4e840b5e42";
             const API_URL = `https://apis.xwolf.space/api/textpro/${selectedEffect}?text=${encodeURIComponent(textToGenerate)}&key=${API_KEY}`;
 
             try {
-                // XWOLF API එකට Request එක යවනවා (TextPro APIs සාමාන්‍යයෙන් GET requests)
                 let response = await axios.get(API_URL, { timeout: 30000 });
-                
                 let apiData = response.data;
 
                 if (apiData.success && apiData.imageUrl) {
