@@ -1,6 +1,6 @@
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
-const https = require("https"); // 🔴 කනෙක්ෂන් අවුල හදන්න මේක අලුතින් දැම්මා
+const https = require("https"); 
 
 // 1. Global Context (Memory එක හදනවා)
 if (!global.logoPluginContext) global.logoPluginContext = {};
@@ -89,14 +89,15 @@ Sparky(
             const API_URL = `https://apis.xwolf.space/api/textpro/${selectedEffect}?text=${encodeURIComponent(textToGenerate)}&key=${API_KEY}`;
 
             try {
-                // 🔴 FIX: GitHub Actions Network එකේ "fetch failed" එන එක නවත්තන්න IPv4 Force කිරීම!
                 const httpsAgent = new https.Agent({ family: 4 }); 
 
                 let response = await axios.get(API_URL, { 
                     timeout: 40000,
-                    httpsAgent: httpsAgent, // මෙතනින් තමයි කනෙක්ෂන් එක හදන්නේ
+                    adapter: 'http', // 🔴 THE MAGIC FIX: මේකෙන් තමයි අලුත් fetch එක අයින් කරලා අපේ IPv4 සෙටින්ග්ස් වැඩ කරන්න හදන්නේ
+                    httpsAgent: httpsAgent,
                     headers: { 
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "application/json, text/plain, */*"
                     }
                 });
                 
