@@ -49,7 +49,7 @@ Sparky({
         if (response.data && response.data.success && response.data.url) {
             await client.sendMessage(m.jid, { 
                 image: { url: response.data.url }, 
-                caption: `🔎 *Search:* ${prompt}\n✨ *Powered by XWOLF*` 
+                caption: `🔎 *Search:* ${prompt}\n✨ *Powered by ★彡 👑ＳＡＤＥＷ－Ｘ－ＭＤ🔥 彡★*` 
             }, { quoted: m });
             
             try { if (typeof m.react === "function") await m.react("✅"); } catch {}
