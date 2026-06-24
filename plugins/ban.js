@@ -69,7 +69,7 @@ Sparky({
         } else {
             let cleanNumber = target.replace(/[^0-9]/g, "");
             if (cleanNumber.length < 10) {
-                return m.reply(`❌ *Invalid phone number!*`);
+                return m.reply(`❌ *Invalid phone number!*\nPlease provide a valid number with country code.`);
             }
             targetJid = cleanNumber + "@s.whatsapp.net";
         }
@@ -85,7 +85,7 @@ Sparky({
         }
 
         if (global.banList.has(targetJid)) {
-            return m.reply(`⚠️ *Already banned!*\n\n📱 ${targetJid}`);
+            return m.reply(`⚠️ *Already banned!*\n\n📱 ${targetJid}\n📅 ${global.banList.get(targetJid).date}`);
         }
 
         global.banList.set(targetJid, {
@@ -124,10 +124,10 @@ Sparky({
                     listMsg += `   📅 ${info.date}\n\n`;
                     count++;
                 }
-                listMsg += `📌 ${m.prefix}unban <number>`;
+                listMsg += `📌 *To unban:* ${m.prefix}unban <JID or number>\nExample: ${m.prefix}unban 94712345678`;
                 return m.reply(listMsg);
             } else {
-                return m.reply(`🔓 *No users are banned.*`);
+                return m.reply(`🔓 *No users are currently banned.*`);
             }
         }
 
@@ -144,13 +144,13 @@ Sparky({
         }
 
         if (!global.banList.has(targetJid)) {
-            return m.reply(`❌ *User is not banned!*`);
+            return m.reply(`❌ *User is not banned!*\n\n📱 ${targetJid}`);
         }
 
         global.banList.delete(targetJid);
         saveBans();
 
-        await m.reply(`🔓 *User Unbanned!*\n\n📱 ${targetJid}`);
+        await m.reply(`🔓 *User Unbanned!*\n\n📱 ${targetJid}\n📅 ${new Date().toLocaleString()}`);
         await m.react("🔓");
 
     } catch (error) {
