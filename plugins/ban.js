@@ -1,27 +1,13 @@
 const { Sparky } = require("../lib");
 
-// බෑන් කරපු අයගේ ලැයිස්තුව මතකයේ තබා ගැනීමට Global Array එකක් සාදයි
 if (!global.bannedList) {
     global.bannedList = [];
 }
 
-// 🔥 [මධ්‍යගත පාලනය] - ඕනෑම කෙනෙක් මැසේජ් එකක් එවද්දී මුලින්ම මේක ක්‍රියාත්මක වේ
-Sparky({
-    on: "message", // හැම මැසේජ් එකක්ම බලනවා
-    dontTriggerList: true // මේක වෙනම කමාන්ඩ් එකක් විදිහට ලිස්ට් වෙන්නේ නෑ
-}, async (chat) => {
-    // මැසේජ් එක එවපු කෙනා බෑන් ලිස්ට් එකේ ඉන්නවා නම් සහ එයා බොට්ගේ අයිතිකරු නෙවෙයි නම්
-    if (global.bannedList.includes(chat.sender) && !chat.fromMe) {
-        // බොට් කිසිම ප්‍රතිචාරයක් දක්වන්නේ නැත, කමාන්ඩ් එක එතනින්ම නවතී
-        chat.stop(); // Sparky framework එකේ ඊළඟ ප්ලගින්ස් වලට යන එක නවත්වන කමාන්ඩ් එක
-        return false;
-    }
-});
-
 // ================= BAN COMMAND =================
 Sparky({
     pattern: "ban",
-    fromMe: true, // බොට්ගේ අයිතිකරුට පමණි
+    fromMe: true,
     desc: "පරිශීලකයෙකුට බොට් පාවිච්චි කිරීම තහනම් කරයි.",
     category: "owner"
 }, async (chat) => {
@@ -37,7 +23,7 @@ Sparky({
         }
 
         if (!userToBan) {
-            return await chat.reply("❌ කරුණාකර බෑන් කිරීමට අවශ්‍ය කෙනාගේ මැසේජ් එකකට රිප්ලයි කරන්න හෝ ටැග් කරන්න.");
+            return await chat.reply("❌ කරුණාකර බෑන් කිරීමට අවශ්‍ය කෙනාගේ මැසේජ් එකකට රිප්ලයි කරන්න, ටැග් කරන්න හෝ Inbox එකේදී මෙම command එක භාවිතා කරන්න.");
         }
 
         if (global.bannedList.includes(userToBan)) {
@@ -56,7 +42,7 @@ Sparky({
 // ================= UNBAN COMMAND =================
 Sparky({
     pattern: "unban",
-    fromMe: true, // බොට්ගේ අයිතිකරුට පමණි
+    fromMe: true,
     desc: "බෑන් කල පරිශීලකයෙකු නැවත යථා තත්ත්වයට පත් කරයි.",
     category: "owner"
 }, async (chat) => {
