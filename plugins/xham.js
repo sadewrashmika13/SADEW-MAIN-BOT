@@ -9,7 +9,7 @@ Sparky({
     desc: "Search and download the first result immediately"
 }, async ({ m, client, args }) => {
     try {
-        let query = args.join(" ").trim();
+        let query = args ? (Array.isArray(args) ? args.join(" ").trim() : args.trim()) : m.quoted?.text;
         if (!query) return await m.reply("❌ *කරුණාකර සෙවිය යුතු පදයක් ඇතුළත් කරන්න!*");
 
         await m.react('⏳');
