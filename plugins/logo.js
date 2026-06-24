@@ -2,7 +2,7 @@ const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 const https = require("https"); 
 
-// 1. Global Context (Memory එක හදනවා)
+// 1. Global Context
 if (!global.logoPluginContext) global.logoPluginContext = {};
 
 const textProEffects = [
@@ -93,7 +93,7 @@ Sparky(
 
                 let response = await axios.get(API_URL, { 
                     timeout: 40000,
-                    adapter: 'http', // 🔴 THE MAGIC FIX: මේකෙන් තමයි අලුත් fetch එක අයින් කරලා අපේ IPv4 සෙටින්ග්ස් වැඩ කරන්න හදන්නේ
+                    adapter: 'http', 
                     httpsAgent: httpsAgent,
                     headers: { 
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -123,11 +123,31 @@ Sparky(
                 }
 
             } catch (error) {
-                console.error("[LOGO MAKER ERROR]:", error.message);
+                console.error("[LOGO MAKER ERROR]:", error);
                 try { if (typeof m.react === "function") await m.react("❌"); } catch {}
                 
-                let errMsg = error.response?.data?.error || error.message;
-                await client.sendMessage(m.jid, { text: `❌ *ලෝගෝව නිර්මාණය කිරීමට නොහැකි විය.*\nහේතුව: ${errMsg}` }, { quoted: m });
+                // 🔴 මෙතනින් තමයි හැංගිච්ච Error ඔක්කොම එළියට ගන්නේ
+                let detailedError = error.message;
+                
+                // Cause එකක් තියෙනවද බලනවා (Node.js 18+ වල ඇත්ත හේතුව තියෙන්නේ මෙතන)
+                if (error.cause) {
+                    detailedError += `\n*Cause:* ${error.cause.message || error.cause}`;
+                }
+                
+                // Error Code එකක් ආවොත් (උදා: ECONNREFUSED)
+                if (error.code) {
+                    detailedError += `\n*Code:* ${error.code}`;
+                }
+                
+                // API එකෙන් මොකක් හරි රිප්ලයි එකක් ආවොත්
+                if (error.response) {
+                    detailedError += `\n*Status:* ${error.response.status}`;
+                    detailedError += `\n*Data:* ${JSON.stringify(error.response.data)}`;
+                }
+
+                await client.sendMessage(m.jid, { 
+                    text: `❌ *ලෝගෝව නිර්මාණය කිරීමට නොහැකි විය.*\n\n*Error Details:*\n\`\`\`${detailedError}\`\`\`` 
+                }, { quoted: m });
             }
         }
     }
