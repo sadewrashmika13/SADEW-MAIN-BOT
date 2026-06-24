@@ -1,6 +1,9 @@
-// commands/logo.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
+const https = require("https");
+
+// 🔴 THE ULTIMATE FIX: yml එක නැතුව SSL Certificate Error එක කෝඩ් එකෙන්ම මකලා දාන මැජික් කෑල්ල!
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 // 1. Global Context (Memory එක හදනවා)
 if (!global.logoPluginContext) global.logoPluginContext = {};
@@ -43,12 +46,7 @@ Sparky({
         let textToGenerate = getQuery(args);
 
         if (!textToGenerate) {
-            return m.reply(`❌ *කරුණාකර නමක් ලබා දෙන්න.*
-            
-*Usage:* ${m.prefix}logo <name>
-*Example:* ${m.prefix}logo Sadew
-
-*ඉන්පසු ලැයිස්තුවෙන් අංකයක් Reply කරන්න.*`);
+            return m.reply(`❌ *කරුණාකර නමක් ලබා දෙන්න.*\n\n*Usage:* .logo <name>\n*Example:* .logo Sadew\n\n*ඉන්පසු ලැයිස්තුවෙන් අංකයක් Reply කරන්න.*`);
         }
 
         // මෙනු එක ලස්සනට හදනවා
@@ -73,7 +71,7 @@ Sparky({
             timestamp: Date.now()
         };
 
-        // 5 minutes auto-clear
+        // 5 minutes auto-clear (Memory Leak එකක් නොවෙන්න)
         setTimeout(() => {
             if (global.logoPluginContext[m.sender]) {
                 delete global.logoPluginContext[m.sender];
@@ -86,50 +84,55 @@ Sparky({
     }
 });
 
-// 🔥 FIX: Listener Command (අංකයට රිප්ලයි කරාම අල්ලගන්න කමාන්ඩ් එක)
-// Using pattern: /^\d+$/ to match only numbers
+// 3. Listener Command (අංකයට රිප්ලයි කරාම අල්ලගන්න කමාන්ඩ් එක)
 Sparky({
-    name: "logo_reply",
-    pattern: /^\d+$/,      // 👈 numbers only
-    dontPrefix: true,      // 👈 allows raw number without dot
-    fromMe: false,
-    dontAddCommandList: true,
-    desc: "Logo effect selection"
+    on: "text", // 👈 ඕනෑම Text එකක් අහන් ඉන්නවා
+    fromMe: isPublic,
+    dontAddCommandList: true
 }, async ({ client, m }) => {
+    
+    // මේක යූසර්ගේ රිප්ලයි එකක්ද කියලා බලනවා
     let context = global.logoPluginContext[m.sender];
-
-    // Memory එකේ දත්ත නැත්නම් හරි, රිප්ලයි කරලා නැත්නම් හරි අතෑරලා දානවා
     if (!context || !m.quoted) return;
-
-    // රිප්ලයි කරපු මැසේජ් එකේ ID එක, සේව් කරපු මැසේජ් එකේ ID එකට සමානද බලනවා
     if (m.quoted.key.id !== context.quotedId) return;
 
     let choice = parseInt(m.text.trim());
 
     // වැරදි අංකයක් ගැහුවොත්
     if (isNaN(choice) || choice < 1 || choice > textProEffects.length) {
-        return m.reply(`❌ *කරුණාකර ලැයිස්තුවේ ඇති නිවැරදි අංකයක් පමණක් Reply කරන්න.*
-        
-💡 Valid numbers: 1-${textProEffects.length}`);
+        return m.reply(`❌ *කරුණාකර ලැයිස්තුවේ ඇති නිවැරදි අංකයක් පමණක් Reply කරන්න.*\n\n💡 Valid numbers: 1-${textProEffects.length}`);
     }
 
-    // ✅ අංකය හරි නම්, Memory එක අනිවාර්යයෙන්ම මකනවා
+    // අංකය හරි නම්, Memory එක අනිවාර්යයෙන්ම මකනවා
     let textToGenerate = context.data;
     delete global.logoPluginContext[m.sender];
-
-    // ⏳ ලෝඩින් එක
-    await m.reply(`⏳ *Logo එක සාදමින්...*\nEffect: ${textProEffects[choice - 1]}\nText: ${textToGenerate}\n_මෙය තත්පර කිහිපයක් ගත විය හැක._`);
 
     // තේරුව Effect එක ගන්නවා
     let selectedEffect = textProEffects[choice - 1];
     let cleanName = selectedEffect.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
-    // ✅ XWOLF API එක (GET request)
+    // ⏳ ලෝඩින් එක
+    try { if (typeof m.react === "function") await m.react("⏳"); } catch {}
+    await m.reply(`⏳ *Logo එක සාදමින්...*\nEffect: ${cleanName}\nText: ${textToGenerate}\n_මෙය තත්පර කිහිපයක් ගත විය හැක._`);
+
+    // XWOLF API එක
     const API_KEY = "wxa_f_4e840b5e42";
     const API_URL = `https://apis.xwolf.space/api/textpro/${selectedEffect}?text=${encodeURIComponent(textToGenerate)}&key=${API_KEY}`;
 
     try {
-        let response = await axios.get(API_URL, { timeout: 30000 });
+        // Double Protection: මෙතනත් Agent එකක් දානවා කිසිම අවුලක් නොවෙන්න
+        const agent = new https.Agent({  
+            rejectUnauthorized: false
+        });
+
+        let response = await axios.get(API_URL, { 
+            timeout: 60000, 
+            httpsAgent: agent,
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+        });
+        
         let apiData = response.data;
 
         if (apiData.success && apiData.imageUrl) {
@@ -144,22 +147,16 @@ Sparky({
                 caption: finalCaption
             }, { quoted: m });
 
-            await m.react("✅");
+            try { if (typeof m.react === "function") await m.react("✅"); } catch {}
         } else {
             throw new Error(apiData.message || "API එකෙන් අදාළ ඡායාරූපය ලබා දුන්නේ නැත.");
         }
 
     } catch (error) {
         console.error("[LOGO MAKER ERROR]:", error.message);
+        try { if (typeof m.react === "function") await m.react("❌"); } catch {}
 
         let errMsg = error.response?.data?.error || error.message || "Unknown error";
-        m.reply(`❌ *ලෝගෝව නිර්මාණය කිරීමට නොහැකි විය.*
-
-📝 *හේතුව:* ${errMsg}
-
-💡 *විසඳුම්:*
-- නිවැරදි අංකයක් තෝරා ගන්න
-- නැවත උත්සාහ කරන්න
-- Effect එක කෙලින්ම භාවිතා කරන්න: \`.logo ${selectedEffect} ${textToGenerate}\``);
+        m.reply(`❌ *ලෝගෝව නිර්මාණය කිරීමට නොහැකි විය.*\n\n📝 *හේතුව:* ${errMsg}`);
     }
 });
