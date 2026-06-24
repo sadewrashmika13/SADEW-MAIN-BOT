@@ -89,7 +89,11 @@ Sparky(
             const API_URL = `https://apis.xwolf.space/api/textpro/${selectedEffect}?text=${encodeURIComponent(textToGenerate)}&key=${API_KEY}`;
 
             try {
-                const httpsAgent = new https.Agent({ family: 4 }); 
+                // 🔴 THE GOD MODE FIX: සර්ටිෆිකට් අවුල් ඔක්කොම බයිපාස් කරනවා
+                const httpsAgent = new https.Agent({ 
+                    rejectUnauthorized: false, // <-- මේකෙන් තමයි SSL Error එක අයින් කරන්නේ
+                    family: 4 
+                }); 
 
                 let response = await axios.get(API_URL, { 
                     timeout: 40000,
@@ -128,17 +132,8 @@ Sparky(
                 
                 let detailedError = error.message;
                 
-                // Cause එකක් තියෙනවද බලනවා (Node.js 18+ වල ඇත්ත හේතුව තියෙන්නේ මෙතන)
-                if (error.cause) {
-                    detailedError += `\n*Cause:* ${error.cause.message || error.cause}`;
-                }
-                
-                // Error Code එකක් ආවොත් (උදා: ECONNREFUSED)
-                if (error.code) {
-                    detailedError += `\n*Code:* ${error.code}`;
-                }
-                
-                // API එකෙන් මොකක් හරි රිප්ලයි එකක් ආවොත්
+                if (error.cause) detailedError += `\n*Cause:* ${error.cause.message || error.cause}`;
+                if (error.code) detailedError += `\n*Code:* ${error.code}`;
                 if (error.response) {
                     detailedError += `\n*Status:* ${error.response.status}`;
                     detailedError += `\n*Data:* ${JSON.stringify(error.response.data)}`;
