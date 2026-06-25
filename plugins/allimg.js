@@ -23,16 +23,19 @@ aiStyles.forEach(style => {
         desc: style.desc
     }, async ({ m, text, args }) => {
         
-        // 🔴 FIXED PROMPT EXTRACTION 🔴
-        // බොට් බේස් එකෙන් එන prompt එක හරියටම අල්ලගන්න හැටි
+        // 🔴 CRASH FIX: args.join Error Fixed 🔴
         let promptInput = text || "";
         
-        // text එකේ ආවේ නැත්නම් args වලින් අරන් එකතු කරනවා
-        if (!promptInput && args && args.length > 0) {
-            promptInput = args.join(" ");
+        // args ආවා නම්, ඒක Array එකක්ද String එකක්ද කියලා බලලා ගන්නවා
+        if (!promptInput && args) {
+            if (Array.isArray(args)) {
+                promptInput = args.join(" ");
+            } else {
+                promptInput = args.toString(); // Array එකක් නෙමෙයි නම් කෙලින්ම ගන්නවා
+            }
         }
         
-        // ඒත් ආවේ නැත්නම් මැසේජ් එකේ තියෙන මුළු වචන ටික අරන් පළවෙනි වචනෙ (command එක) කපලා දානවා
+        // ඒත් ආවේ නැත්නම් මැසේජ් එකේ තියෙන මුළු වචන ටික අරන් පළවෙනි වචනෙ කපලා දානවා
         if (!promptInput) {
             let rawText = m.text || m.body || "";
             let splitText = rawText.trim().split(" ");
@@ -60,7 +63,7 @@ aiStyles.forEach(style => {
             if (data?.url) {
                 const caption = `✨ *AI Generated (${style.cmd.toUpperCase()})*\n\n📝 *Prompt:* ${promptInput}\n\n❤️‍🩹 *❖👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥💎*`;
                 
-                // 🛠️ X-BOT-MD OFFICIAL MEDIA SENDING FUNCTION
+                // 🛠️ MEDIA SENDING
                 if (typeof m.sendFromUrl === "function") {
                     return await m.sendFromUrl(data.url, { caption: caption, quoted: m });
                 } else if (typeof m.replyUrl === "function") {
