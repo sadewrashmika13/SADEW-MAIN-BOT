@@ -3,7 +3,7 @@ const axios = require("axios");
 const FormData = require("form-data");
 
 // 🔄 NanoBanana API Endpoint
-const NANO_BANANA_API = "https://www.movanest.xyz/v2/nanobanana-pub";
+const NANO_BANANA_API = "https://apis.davidcyril.name.ng/nanobanana";
 
 /**
  * ⚡ AI-Friendly Image Uploader (ඔයාගේ සාර්ථක කේතය)
