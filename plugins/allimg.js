@@ -7,10 +7,10 @@ const BASE_URL = "https://apis.xwolf.space/api/ai/tools";
 
 // ඔයාගේ API ස්ටයිල් ටික මෙතන තියෙනවා
 const aiStyles = [
-    { cmd: "realistic", path: "realistic", desc: "Photorealistic images", ratio: "16:9" },
-    { cmd: "anime", path: "anime", desc: "Anime style images", ratio: "9:16" },
-    { cmd: "darkart", path: "dark-art", desc: "Dark art style images", ratio: "9:16" },
-    { cmd: "ghibli", path: "ghibli", desc: "Studio Ghibli style", ratio: "16:9" },
+    { cmd: "realistic", path: "realistic", desc: "Photorealistic images", ratio: "1:1" },
+    { cmd: "anime", path: "anime", desc: "Anime style images", ratio: "1:1" },
+    { cmd: "darkart", path: "dark-art", desc: "Dark art style images", ratio: "1:1" },
+    { cmd: "ghibli", path: "ghibli", desc: "Studio Ghibli style", ratio: "1:1" },
     { cmd: "portrait", path: "portrait", desc: "High quality portraits", ratio: "1:1" }
 ];
 
