@@ -136,7 +136,7 @@ Sparky({
 });
 
 // ==========================================
-// 3. FETCH QUALITY OPTIONS (STRICT URL EXTRACTION)
+// 3. FETCH QUALITY OPTIONS
 // ==========================================
 async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
     const title = selectedMovie.title;
@@ -155,17 +155,21 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
             return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි (Links) හමු නොවිණි.`);
         }
 
-        // 🔴 FIXED: Iframe අයින් කරලා හරියටම URL එක තියෙන එක විතරක් ගන්නවා 
-        let validLinks = data.data.filter(v => v.link && typeof v.link === 'string' && v.link.startsWith('http') && !v.link.includes('<iframe'));
+        // 🔴 UPDATE: 'http' ෆිල්ටර් එක අයින් කළා. දැන් Iframe නැති ඕනෑම ලින්ක් එකක් ගන්නවා.
+        let validLinks = data.data.filter(v => v.link && typeof v.link === 'string' && !v.link.includes('<iframe'));
 
         if (validLinks.length === 0) {
             await m.react("❌");
-            return await m.reply(`❌ මෙම චිත්‍රපටයට අදාළ Direct Download Server Link එකක් සොයාගැනීමට නොහැක.`);
+            return await m.reply(`❌ මෙම චිත්‍රපටයට අදාළ Direct Download Link එකක් සොයාගැනීමට නොහැක. (ඇත්තේ Web Player පමණි)`);
         }
 
-        // sonic-cloud හෝ cinesubz තියෙන ලින්ක් එකකට ප්‍රමුඛතාවය දෙනවා
         let directVideo = validLinks.find(v => v.link.includes('sonic-cloud') || v.link.includes('cinesubz')) || validLinks[0];
         let baseLink = directVideo.link;
+        
+        // ලින්ක් එක // වලින් පටන් ගන්නවා නම් http එකතු කරනවා
+        if (baseLink.startsWith('//')) {
+            baseLink = 'https:' + baseLink;
+        }
 
         let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
         qualMsg += `*1.* 🟢 480p (SD Quality)\n`;
@@ -190,7 +194,7 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
 }
 
 // ==========================================
-// 4. DOWNLOAD & DIRECT SEND FUNCTION (STRICT DANUZZ API USAGE)
+// 4. DOWNLOAD & DIRECT SEND FUNCTION 
 // ==========================================
 async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle, baseLink) {
     try {
@@ -199,7 +203,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         let actualQuality = qualityStr;
         let realMp4Url = null;
 
-        // 🌟 1. අනිවාර්යයෙන්ම DanuZz API එක හරහා ගිහින් නියම MP4 ලින්ක් එක ගන්නවා (වෙබ් පේජ් බාන එක නවත්තන්න)
+        // 1. DanuZz API එක හරහා නියම MP4 ලින්ක් එක ගන්නවා
         try {
             const danuzApiUrl = `https://cz-dnuz.vercel.app/download?url=${encodeURIComponent(finalUrl)}`;
             const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 15000 });
@@ -208,20 +212,19 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
                 const directLinkObj = danuzData.result.downloadUrls.find(d => d.url && !d.url.includes('t.me'));
                 if (directLinkObj && directLinkObj.url) {
                     realMp4Url = directLinkObj.url;
-                    console.log("✅ DanuZz API Extracted Real MP4 Link:", realMp4Url);
+                    console.log("✅ DanuZz API Extracted Real MP4 Link!");
                 }
             }
         } catch (apiErr) {
             console.log("⚠️ DanuZz API Failed:", apiErr.message);
         }
 
-        // 🔴 24KB ෆයිල් එක එනවා නම් මෙතනින් නවත්තනවා!
         if (!realMp4Url) {
             await m.react("❌");
             return await m.reply(`❌ API දෝෂයක්! DanuZz සර්වර් එකෙන් නිවැරදි ගොනුව ලබා ගත නොහැක.\n(මෙය මඟහැරියහොත් ඔබට ලැබෙන්නේ 24KB HTML ගොනුවක් බැවින් ඩවුන්ලෝඩ් වීම නවතා දමන ලදී.)`);
         }
 
-        // 2. හරියටම අහු වෙච්ච MP4 එකේ Size එක චෙක් කරනවා
+        // 2. Size එක චෙක් කරනවා
         try {
             const headRes = await axios.head(realMp4Url, { timeout: 10000 });
             if (headRes && headRes.headers['content-length']) {
@@ -240,7 +243,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${actualQuality}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
-        // 3. නියමම MP4 ලින්ක් එකෙන් (realMp4Url) ෆිල්ම් එක යවනවා
+        // 3. නියමම MP4 ලින්ක් එකෙන් ෆිල්ම් එක යවනවා
         await client.sendMessage(m.jid, {
             document: { url: realMp4Url },
             mimetype: "video/mp4",
