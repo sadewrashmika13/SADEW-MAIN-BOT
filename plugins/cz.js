@@ -155,7 +155,6 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
             return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි (Links) හමු නොවිණි.`);
         }
 
-        // 🔴 UPDATE: 'http' ෆිල්ටර් එක අයින් කළා. දැන් Iframe නැති ඕනෑම ලින්ක් එකක් ගන්නවා.
         let validLinks = data.data.filter(v => v.link && typeof v.link === 'string' && !v.link.includes('<iframe'));
 
         if (validLinks.length === 0) {
@@ -166,7 +165,6 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
         let directVideo = validLinks.find(v => v.link.includes('sonic-cloud') || v.link.includes('cinesubz')) || validLinks[0];
         let baseLink = directVideo.link;
         
-        // ලින්ක් එක // වලින් පටන් ගන්නවා නම් http එකතු කරනවා
         if (baseLink.startsWith('//')) {
             baseLink = 'https:' + baseLink;
         }
@@ -194,48 +192,68 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
 }
 
 // ==========================================
-// 4. DOWNLOAD & DIRECT SEND FUNCTION 
+// 4. DOWNLOAD & DIRECT SEND FUNCTION (SMART FALLBACK)
 // ==========================================
 async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle, baseLink) {
     try {
         await m.react("⬇️");
         const metaQuote = getMetaQuote();
         let actualQuality = qualityStr;
-        let realMp4Url = null;
+        let downloadUrl = null;
 
-        // 1. DanuZz API එක හරහා නියම MP4 ලින්ක් එක ගන්නවා
+        // 🌟 1. මුලින්ම DanuZz API එකෙන් නියම MP4 ලින්ක් එක ගන්න ට්‍රයි කරනවා
         try {
             const danuzApiUrl = `https://cz-dnuz.vercel.app/download?url=${encodeURIComponent(finalUrl)}`;
-            const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 15000 });
+            const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 12000 });
 
             if (danuzData && danuzData.success && danuzData.result && danuzData.result.downloadUrls) {
                 const directLinkObj = danuzData.result.downloadUrls.find(d => d.url && !d.url.includes('t.me'));
                 if (directLinkObj && directLinkObj.url) {
-                    realMp4Url = directLinkObj.url;
+                    downloadUrl = directLinkObj.url;
                     console.log("✅ DanuZz API Extracted Real MP4 Link!");
                 }
             }
         } catch (apiErr) {
-            console.log("⚠️ DanuZz API Failed:", apiErr.message);
+            console.log("⚠️ DanuZz API Failed, switching to Fallback...");
         }
 
-        if (!realMp4Url) {
-            await m.react("❌");
-            return await m.reply(`❌ API දෝෂයක්! DanuZz සර්වර් එකෙන් නිවැරදි ගොනුව ලබා ගත නොහැක.\n(මෙය මඟහැරියහොත් ඔබට ලැබෙන්නේ 24KB HTML ගොනුවක් බැවින් ඩවුන්ලෝඩ් වීම නවතා දමන ලදී.)`);
+        // 🌟 2. API එක ෆේල් වුණොත්, අර කලින් වැඩ කරපු පරණ විදිහට සයිට් එකේ ලින්ක් එකම ගන්නවා (Fallback)
+        if (!downloadUrl) {
+            downloadUrl = finalUrl;
         }
 
-        // 2. Size එක චෙක් කරනවා
+        // 🌟 3. හැබැයි 24KB ෆයිල් එන එක නවත්තන්න, ලින්ක් එකෙන් දෙන්නේ මොනවද කියලා චෙක් කරනවා
         try {
-            const headRes = await axios.head(realMp4Url, { timeout: 10000 });
-            if (headRes && headRes.headers['content-length']) {
-                const sizeInMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
+            const headRes = await axios.head(downloadUrl, { timeout: 10000 });
+            const contentType = headRes.headers['content-type'];
+            const contentLength = headRes.headers['content-length'];
+
+            // 🔴 මෙන්න 24KB එක නවත්තන තැන: ලින්ක් එක Web Page එකක් නම් බාන්නේ නෑ!
+            if (contentType && contentType.includes('text/html')) {
+                await m.react("❌");
+                return await m.reply(`❌ මෙම ලින්ක් එකෙන් ලබා දෙන්නේ වීඩියෝවක් නොව Web Page එකකි.\nAPI එකද අසාර්ථක වූ බැවින් මෙය බාගත නොහැක.`);
+            }
+
+            // Size එක ලිමිට් එක පනිනවද බලනවා
+            if (contentLength) {
+                const sizeInMB = parseInt(contentLength) / (1024 * 1024);
                 if (sizeInMB > 1990) {
                     await m.react("❌");
                     return await m.reply(`❌ *ගොනුව විශාල වැඩියි! (${sizeInMB.toFixed(2)} MB)*\nවට්ස්ඇප් හරහා යැවිය හැක්කේ 2GB ට අඩු ෆයිල් පමණි.`);
                 }
             }
         } catch (hErr) {
-            console.log("Size check failed, proceeding anyway...");
+            // ලින්ක් එක වැඩ නැත්නම් Base ලින්ක් එකට මාරු වෙනවා
+            if (hErr.response && hErr.response.status === 404) {
+                if (downloadUrl !== baseLink) {
+                    downloadUrl = baseLink; 
+                    actualQuality = "Default Quality";
+                    await m.reply(`⚠️ ඉල්ලුම් කළ Quality සංස්කරණය නොමැත. පවතින එකම සංස්කරණය බාගත වෙමින් පවතී...`);
+                } else {
+                    await m.react("❌");
+                    return await m.reply(`❌ මෙම චිත්‍රපටය සර්වර් එකෙන් ඉවත් කර ඇත (404 Not Found).`);
+                }
+            }
         }
 
         await client.sendMessage(m.jid, { text: `📥 *Downloading:* ${movieTitle}\n⚙️ *Quality:* ${actualQuality}\n\n_මෙය WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක..._` }, { quoted: metaQuote });
@@ -243,9 +261,9 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${actualQuality}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
-        // 3. නියමම MP4 ලින්ක් එකෙන් ෆිල්ම් එක යවනවා
+        // 🌟 4. අන්තිමට සුපිරියටම ෆයිල් එක යවනවා
         await client.sendMessage(m.jid, {
-            document: { url: realMp4Url },
+            document: { url: downloadUrl },
             mimetype: "video/mp4",
             fileName: `${safeTitle} - ${actualQuality}.mp4`,
             caption: caption
