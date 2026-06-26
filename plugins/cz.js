@@ -165,7 +165,6 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
         let firstItem = data.data[0];
 
         if (firstItem && firstItem.link) {
-            // Iframe තිබ්බොත් ඇතුලෙන් ලින්ක් එක ගලවනවා
             if (firstItem.link.includes('<iframe')) {
                 const match = firstItem.link.match(/src=["']([^"']+)["']/);
                 if (match) baseLink = match[1];
@@ -205,13 +204,13 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
 }
 
 // ==========================================
-// 4. DUAL API DOWNLOAD FUNCTION (FALLBACK LOGIC)
+// 4. DUAL API DOWNLOAD FUNCTION (WITH 24KB BLOCKER)
 // ==========================================
 async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle) {
     try {
         await m.react("⬇️");
         const metaQuote = getMetaQuote();
-        let downloadUrl = finalUrl; // මුලින්ම Default එක දාගන්නවා
+        let downloadUrl = finalUrl; 
         let usingApi = "Direct (CNW)";
 
         // 🌟 API 1: DanuZz API එකෙන් ට්‍රයි කරනවා (First Priority)
@@ -231,11 +230,25 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle)
             console.log("⚠️ DanuZz API Failed, falling back to original Direct URL...");
         }
 
-        // 🌟 API 2 (Fallback): DanuZz එක ෆේල් වුණොත්, 'downloadUrl' එකට අර පරණ 'finalUrl' එකම පාවිච්චි වෙනවා.
+        // 🌟 අනිවාර්යයෙන්ම ලින්ක් එක Text එකක් විදිහට යවනවා
+        let linkMessage = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${qualityStr}\n🌐 *Server:* ${usingApi}\n\n`;
+        linkMessage += `🔗 *Direct Download Link:*\n${downloadUrl}\n\n`;
+        linkMessage += `_💡 මෙය WhatsApp වෙත එවීමට උත්සාහ කරමින් පවතී... ⏳_\n`;
+        linkMessage += `_(WhatsApp Upload එක Fail වුවහොත් හෝ 24KB File එකක් ආවොත්, ඉහත Link එකෙන් බාගත කරගන්න)_\n\n`;
+
+        await client.sendMessage(m.jid, { text: linkMessage }, { quoted: metaQuote });
         
-        // ෆයිල් සයිස් එක චෙක් කරනවා
+        // 🌟 24KB ෆයිල් සහ ෆයිල් සයිස් එක චෙක් කරනවා
         try {
             const headRes = await axios.head(downloadUrl, { timeout: 10000 });
+            
+            // 🔴 24KB (Web Page) බ්ලොක් කිරීම
+            const contentType = headRes.headers['content-type'];
+            if (contentType && contentType.includes('text/html')) {
+                await m.react("❌");
+                return await m.reply(`❌ *අවවාදයයි!* මෙම ලින්ක් එකෙන් ලබා දෙන්නේ වීඩියෝවක් නොව Web Page එකකි (24KB). \nWhatsApp Upload කිරීම නතර කරන ලදී. ඉහත Link එක Browser එකෙන් Open කර Download කරගන්න.`);
+            }
+
             if (headRes && headRes.headers['content-length']) {
                 const sizeMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
                 if (sizeMB > 1950) { 
@@ -244,12 +257,8 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle)
                 }
             }
         } catch (headErr) {
-            console.log("Size check skipped or failed, uploading anyway...");
+            console.log("Size/Type check skipped or failed, uploading anyway...");
         }
-
-        await client.sendMessage(m.jid, { 
-            text: `📥 *Downloading:* ${movieTitle}\n⚙️ *Quality:* ${qualityStr}\n🌐 *Server:* ${usingApi}\n\n_මෙය විශාල ගොනුවක් බැවින් WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක._` 
-        }, { quoted: metaQuote });
         
         const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${qualityStr}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
