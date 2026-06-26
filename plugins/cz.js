@@ -17,7 +17,6 @@ function getMetaQuote() {
     };
 }
 
-// පින්තූරයක් හෝ ටෙක්ස්ට් එකක් බිඳෙන්නේ නැතිව යැවීමට සකසන ලද සේෆ් ෆන්ක්ෂන් එකක්
 async function sendMediaOrText(client, jid, text, imageUrl, quoted) {
     if (imageUrl) {
         try {
@@ -109,7 +108,6 @@ Sparky({
     let context = global.cinesubzContexts[m.sender];
     if (!context || !m.quoted) return;
 
-    // 🔴 BUG FIX 1: මැසේජ් එකේ text එකක් තියෙනවද කියලා බලනවා (ස්ටිකර්, ෆොටෝ ආවොත් ක්‍රෑෂ් නොවෙන්න)
     let rawText = m.text || m.body || "";
     if (!rawText) return; 
 
@@ -154,7 +152,7 @@ Sparky({
 });
 
 // ==========================================
-// 3. FETCH QUALITY OPTIONS 
+// 3. FETCH QUALITY OPTIONS (SMART AUTO-EXTRACT)
 // ==========================================
 async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
     const title = selectedMovie.title;
@@ -173,15 +171,35 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
             return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි (Links) හමු නොවිණි.`);
         }
 
-        const directVideo = data.data.find(v => v.is_direct_mp4) || data.data[0];
-        const baseLink = directVideo.link;
+        // මුලින්ම Iframe නොවන ඩිරෙක්ට් වීඩියෝ ලින්ක් එකක් තියෙනවද බලනවා
+        let directVideo = data.data.find(v => v.link && !v.link.includes('<iframe') && v.link.startsWith('http'));
+        if (!directVideo) directVideo = data.data[0];
 
-        // 🔴 BUG FIX 2: ලින්ක් එක Iframe එකක්ද කියලා මුලින්ම චෙක් කරනවා
-        if (!baseLink || baseLink.includes('<iframe') || !baseLink.startsWith('http')) {
+        let baseLink = directVideo?.link || "";
+
+        if (!baseLink) {
             await m.react("❌");
-            return await m.reply(`❌ *${title}*\nමෙම චිත්‍රපටය සඳහා Direct Download Link එකක් නොමැත.\n(Web Player පමණක් පවතී).`);
+            return await m.reply(`❌ බාගත හැකි මට්ටමේ කිසිදු ලින්ක් එකක් හමු නොවිණි.`);
         }
 
+        // 🌟 SMART LOOKUP: ලින්ක් එක වෙබ් ප්ලේයර් එකක් (Iframe) නම් ඒකෙන් URL එක ගලවනවා
+        if (baseLink.includes('<iframe')) {
+            const match = baseLink.match(/src=["']([^"']+)["']/);
+            if (match && match[1]) {
+                baseLink = match[1];
+                if (baseLink.startsWith('//')) baseLink = 'https:' + baseLink;
+                
+                // මෙමරියෙන් අයින් කරලා කෙලින්ම DanuZz API එකට බාන්න යවනවා (Quality Menu එක ස්කිප් කරලා)
+                delete global.cinesubzContexts[m.sender];
+                await m.reply(`🎬 *${title}*\n\n⚠️ මෙම චිත්‍රපටයට සාමාන්‍ය Direct Links නැත. Web Player එකෙන් ලින්ක් එක ගලවා DanuZz API එක හරහා කෙලින්ම බාගැනීමට උත්සාහ කරයි... ⏳`);
+                return await downloadAndSendMovie(client, m, baseLink, "Bypass Quality", title, baseLink);
+            } else {
+                await m.react("❌");
+                return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගත හැකි සබැඳියක් නොමැත.`);
+            }
+        }
+
+        // සාමාන්‍ය ලින්ක් එකක් නම් විතරක් Quality Menu එක පෙන්නනවා
         let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
         qualMsg += `*1.* 🟢 480p (SD Quality)\n`;
         qualMsg += `*2.* 🟢 720p (HD Quality)\n`;
@@ -231,13 +249,12 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
             console.log("⚠️ DanuZz API Failed or Timed out, falling back to default logic.");
         }
 
-        // 🔴 BUG FIX 3: Download කරන්න කලින් ආයෙත් Iframe එකක්ද කියලා අන්තිම පාරට චෙක් කරනවා
-        if (validUrl.includes('<iframe') || !validUrl.startsWith('http')) {
+        if (!validUrl || !validUrl.startsWith('http')) {
             await m.react("❌");
-            return await m.reply(`❌ සමාවෙන්න, මෙය බාගත කිරීමට නොහැකි Embedded Video එකකි.`);
+            return await m.reply(`❌ සමාවෙන්න, මෙය බාගත කිරීමට නොහැකි ලින්ක් එකකි.`);
         }
 
-        // 2. ලින්ක් එක වැඩද කියලා චෙක් කිරීම සහ Size චෙක් කිරීම
+        // 2. Size චෙක් කිරීම
         try {
             const headRes = await axios.head(validUrl, { timeout: 10000 });
             if (headRes && headRes.headers['content-length']) {
@@ -252,7 +269,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
                 if (validUrl !== baseLink && baseLink.startsWith('http')) {
                     validUrl = baseLink; 
                     actualQuality = "Default Quality";
-                    await m.reply(`⚠️ ඉල්ලුම් කළ *${qualityStr}* සංස්කරණය සර්වර් එකේ නොමැත.\n_පවතින එකම සංස්කරණය බාගත වෙමින් පවතී..._`);
+                    await m.reply(`⚠️ ඉල්ලුම් කළ සංස්කරණය සර්වර් එකේ නොමැත. පවතින එකම සංස්කරණය බාගත වෙමින් පවතී...`);
                 } else {
                     await m.react("❌");
                     return await m.reply(`❌ මෙම චිත්‍රපටය සර්වර් එකෙන් ඉවත් කර ඇත (404 Not Found).`);
@@ -265,11 +282,11 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${actualQuality}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
-        // 3. හරි ලින්ක් එකෙන් ඩවුන්ලෝඩ් කිරීම
+        // 3. ෆයිල් එක යැවීම
         await client.sendMessage(m.jid, {
             document: { url: validUrl },
             mimetype: "video/mp4",
-            fileName: `${safeTitle} - ${actualQuality}.mp4`,
+            fileName: `${safeTitle}.mp4`,
             caption: caption
         }, { quoted: metaQuote });
 
