@@ -2,12 +2,16 @@
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
 
-// අංකයට රිප්ලයි කිරීමේ මතකය (Context) තබාගැනීමට
+// Global context for number reply
 if (!global.cinesubzContexts) global.cinesubzContexts = {};
 
-// බොට් බ්‍රෑන්ඩින්ග් විස්තර
 const BOT_NAME = "★👑𝙎𝘼𝘿𝙀𝙒-𝙓-𝙈𝘿🔥 ★";
 const POWERED_BY = "Powered by sadew rashmika";
+
+// APIs
+const OLD_API_SEARCH = "https://cinesubz-api-cnw.vercel.app/api/search";
+const OLD_API_EXTRACT = "https://cinesubz-api-cnw.vercel.app/api/extract";
+const DANUZ_API_DOWNLOAD = "https://cz-dnuz.vercel.app/download";
 
 function getMetaQuote() {
     return {
@@ -20,9 +24,7 @@ async function sendMediaOrText(client, jid, text, imageUrl, quoted) {
     if (imageUrl) {
         try {
             return await client.sendMessage(jid, { image: { url: imageUrl }, caption: text }, { quoted });
-        } catch (e) {
-            console.error("Thumbnail sending failed:", e);
-        }
+        } catch (e) {}
     }
     return await client.sendMessage(jid, { text: text }, { quoted });
 }
@@ -36,7 +38,7 @@ function getQuery(args) {
 }
 
 // ==========================================
-// 1. MAIN SEARCH COMMAND (.cz / .cinesubz)
+// 1. MAIN SEARCH COMMAND (.cz)
 // ==========================================
 Sparky({
     name: "cinesubz",
@@ -47,12 +49,14 @@ Sparky({
 }, async ({ client, m, args }) => {
     try {
         const query = getQuery(args);
-        if (!query) return await m.reply(`🎬 *${BOT_NAME} - CINESUBZ*\n\n*භාවිතය:* ${m.prefix}cz <movie_name>\n*උදාහරණ:* ${m.prefix}cz batman\n\n_${POWERED_BY}_`);
+        if (!query) {
+            return await m.reply(`🎬 *${BOT_NAME} - CINESUBZ*\n\n*භාවිතය:* ${m.prefix}cz <movie_name>\n*උදාහරණ:* ${m.prefix}cz batman\n\n_${POWERED_BY}_`);
+        }
 
         await m.react("🔍");
         await m.reply(`🔎 Cinesubz හි සොයමින් "${query}"...`);
 
-        const searchUrl = `https://cinesubz-api-cnw.vercel.app/api/search?q=${encodeURIComponent(query)}`;
+        const searchUrl = `${OLD_API_SEARCH}?q=${encodeURIComponent(query)}`;
         const { data } = await axios.get(searchUrl, { timeout: 15000 });
 
         if (!data.status || !data.data || data.data.length === 0) {
@@ -78,7 +82,7 @@ Sparky({
             results: results
         };
         
-        setTimeout(() => { if (global.cinesubzContexts[m.sender]) delete global.cinesubzContexts[m.sender]; }, 2 * 60 * 1000);
+        setTimeout(() => { if (global.cinesubzContexts[m.sender]) delete global.cinesubzContexts[m.sender]; }, 5 * 60 * 1000);
         await m.react("✅");
 
     } catch (err) {
@@ -89,7 +93,7 @@ Sparky({
 });
 
 // ==========================================
-// 2. DYNAMIC REPLY LISTENER (NO BUTTONS, PURE TEXT)
+// 2. DYNAMIC REPLY LISTENER
 // ==========================================
 Sparky({
     on: "text",
@@ -105,177 +109,186 @@ Sparky({
     let number = parseInt(rawText.trim());
     if (isNaN(number)) return;
 
-    // ▶️ පියවර 1: චිත්‍රපටය තේරීම
+    // Step 1: Movie selection
     if (context.step === "movie_select" && m.quoted.key.id === context.searchMsgId) {
         if (number >= 1 && number <= context.results.length) {
             const selectedMovie = context.results[number - 1];
-            await fetchQualityOptionsForReply(client, m, selectedMovie, context);
+            await fetchDownloadLinks(client, m, selectedMovie, context);
         } else {
             m.reply(`❌ කරුණාකර 1 සිට ${context.results.length} දක්වා වූ නිවැරදි අංකයක් ලබා දෙන්න.`);
         }
     }
     
-    // ▶️ පියවර 2: Quality එක තේරීම
+    // Step 2: Quality selection
     else if (context.step === "quality_select" && m.quoted.key.id === context.qualityMsgId) {
-        if (number >= 1 && number <= 3) {
-            let qualityKey = "720p";
-            if (number === 1) qualityKey = "480p";
-            if (number === 2) qualityKey = "720p";
-            if (number === 3) qualityKey = "1080p";
-
-            const baseLink = context.baseLink;
-            const movieTitle = context.movieTitle;
-
-            // URL එකේ Quality එක Replace කිරීම
-            let finalUrl = baseLink;
-            if (qualityKey === '480p') finalUrl = baseLink.replace(/(720p|1080p|1080|720)/gi, '480p');
-            else if (qualityKey === '720p') finalUrl = baseLink.replace(/(480p|1080p|1080|480)/gi, '720p');
-            else if (qualityKey === '1080p') finalUrl = baseLink.replace(/(480p|720p|480|720)/gi, '1080p');
-
-            // වැඩේ ඉවර නිසා Context මකා දැමීම
+        if (number >= 1 && number <= context.qualityOptions.length) {
+            const selected = context.qualityOptions[number - 1];
+            const downloadUrl = selected.url;
+            const quality = selected.quality;
+            await downloadAndSendMovie(client, m, downloadUrl, quality, context.movieTitle);
             delete global.cinesubzContexts[m.sender];
-            await downloadAndSendMovie(client, m, finalUrl, qualityKey, movieTitle);
         } else {
-            m.reply(`❌ කරුණාකර 1, 2 හෝ 3 අංකයක් ලබා දෙන්න.`);
+            m.reply(`❌ කරුණාකර 1 සිට ${context.qualityOptions.length} දක්වා වූ නිවැරදි අංකයක් ලබා දෙන්න.`);
         }
     }
 });
 
 // ==========================================
-// 3. FETCH QUALITY OPTIONS
+// 3. FETCH DOWNLOAD LINKS (DUAL API)
 // ==========================================
-async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
+async function fetchDownloadLinks(client, m, selectedMovie, context) {
     const title = selectedMovie.title;
-    const movieId = selectedMovie.id;
+    const movieUrl = selectedMovie.url;
     const movieImg = selectedMovie.image || selectedMovie.img || selectedMovie.thumbnail;
 
     await m.react("⏳");
-    await m.reply(`📥 බාගැනීම් විකල්ප සකසමින්: *${title}*...`);
+    await m.reply(`📥 බාගැනීම් විකල්ප සොයමින්: *${title}*...`);
 
+    let qualityOptions = [];
+    let fallbackUrl = null;
+
+    // ---- TRY 1: OLD API (extract) ----
     try {
-        const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${movieId}&type=mv`;
-        const { data } = await axios.get(extractUrl, { timeout: 15000 });
+        const movieId = selectedMovie.id;
+        const extractUrl = `${OLD_API_EXTRACT}?id=${movieId}&type=mv`;
+        const oldRes = await axios.get(extractUrl, { timeout: 15000 });
 
-        if (!data || !data.status || !data.data || data.data.length === 0) {
-            await m.react("❌");
-            return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි (Links) හමු නොවිණි.`);
-        }
-
-        let baseLink = "";
-        let firstItem = data.data[0];
-
-        if (firstItem && firstItem.link) {
-            if (firstItem.link.includes('<iframe')) {
-                const match = firstItem.link.match(/src=["']([^"']+)["']/);
-                if (match) baseLink = match[1];
-            } else {
-                baseLink = firstItem.link;
+        if (oldRes.data.status && oldRes.data.data && oldRes.data.data.length > 0) {
+            for (const item of oldRes.data.data) {
+                if (item.link && item.link.startsWith('http')) {
+                    let link = item.link;
+                    // Clean iframe
+                    if (link.includes('<iframe')) {
+                        const match = link.match(/src=["']([^"']+)["']/);
+                        if (match) link = match[1];
+                    }
+                    if (link.startsWith('//')) link = 'https:' + link;
+                    
+                    // Extract quality from filename or link
+                    let quality = "HD";
+                    const qMatch = link.match(/(480p|720p|1080p|4K)/i);
+                    if (qMatch) quality = qMatch[1];
+                    
+                    qualityOptions.push({ url: link, quality: quality });
+                }
             }
         }
-
-        if (!baseLink) {
-            await m.react("❌");
-            return await m.reply(`❌ ලින්ක් එකක් ලබා ගැනීමට නොහැකි විය.`);
-        }
-
-        if (baseLink.startsWith('//')) baseLink = 'https:' + baseLink;
-
-        // Button වෙනුවට අංක වලින් රිප්ලයි කරන්න මෙනු එක
-        let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
-        qualMsg += `*1.* 🟢 480p (SD Quality)\n`;
-        qualMsg += `*2.* 🟢 720p (HD Quality)\n`;
-        qualMsg += `*3.* 🟢 1080p (Full HD)\n\n`;
-        qualMsg += `_📌 බාගැනීමට අවශ්‍ය අංකය (1, 2 හෝ 3) මෙම පණිවිඩයට Reply කරන්න._`;
-
-        let sentMsg = await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
-
-        context.step = "quality_select";
-        context.qualityMsgId = sentMsg.key.id;
-        context.baseLink = baseLink;
-        context.movieTitle = title;
-
-        await m.react("🎬");
-
     } catch (err) {
-        console.error("Quality Fetch Error:", err);
-        await m.react("❌");
-        await m.reply(`❌ Quality විකල්ප ලබා ගැනීම අසාර්ථකයි!`);
+        console.log("Old API extract failed:", err.message);
     }
+
+    // ---- TRY 2: DANUZ API (new) ----
+    try {
+        const danuzUrl = `${DANUZ_API_DOWNLOAD}?url=${encodeURIComponent(movieUrl)}`;
+        const danuzRes = await axios.get(danuzUrl, { timeout: 20000 });
+        const danuzData = danuzRes.data;
+
+        if (danuzData.success && danuzData.result && danuzData.result.downloadUrls) {
+            for (const entry of danuzData.result.downloadUrls) {
+                if (entry.url && !entry.url.includes('t.me')) {
+                    let quality = "HD";
+                    const qMatch = entry.url.match(/(480p|720p|1080p|4K)/i);
+                    if (qMatch) quality = qMatch[1];
+                    // Avoid duplicates
+                    if (!qualityOptions.some(o => o.url === entry.url)) {
+                        qualityOptions.push({ url: entry.url, quality: quality });
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        console.log("DanuZz API failed:", err.message);
+    }
+
+    // ---- FALLBACK: If no links found, use the movie URL itself ----
+    if (qualityOptions.length === 0 && movieUrl) {
+        qualityOptions.push({ url: movieUrl, quality: "Unknown" });
+    }
+
+    if (qualityOptions.length === 0) {
+        await m.react("❌");
+        return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි හමු නොවිණි.`);
+    }
+
+    // ---- Present quality options ----
+    let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
+    qualityOptions.forEach((opt, idx) => {
+        qualMsg += `*${idx + 1}.* 🟢 ${opt.quality}\n`;
+    });
+    qualMsg += `\n_📌 බාගැනීමට අදාළ අංකය මෙම පණිවිඩයට Reply කරන්න._`;
+
+    let sentMsg = await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
+
+    context.step = "quality_select";
+    context.qualityMsgId = sentMsg.key.id;
+    context.qualityOptions = qualityOptions;
+    context.movieTitle = title;
+
+    await m.react("🎬");
 }
 
 // ==========================================
-// 4. DUAL API DOWNLOAD FUNCTION (WITH 24KB BLOCKER)
+// 4. DOWNLOAD & SEND FUNCTION
 // ==========================================
-async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle) {
+async function downloadAndSendMovie(client, m, downloadUrl, quality, movieTitle) {
     try {
         await m.react("⬇️");
         const metaQuote = getMetaQuote();
-        let downloadUrl = finalUrl; 
-        let usingApi = "Direct (CNW)";
 
-        // 🌟 API 1: DanuZz API එකෙන් ට්‍රයි කරනවා (First Priority)
-        try {
-            const danuzApiUrl = `https://cz-dnuz.vercel.app/download?url=${encodeURIComponent(finalUrl)}`;
-            const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 12000 });
+        // ---- Send the download link as text FIRST ----
+        let linkMsg = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${quality}\n\n🔗 *Download Link:*\n${downloadUrl}\n\n💡 *If the video doesn't auto-download, copy the link and open in browser.*`;
+        await client.sendMessage(m.jid, { text: linkMsg }, { quoted: metaQuote });
 
-            if (danuzData && danuzData.success && danuzData.result && danuzData.result.downloadUrls) {
-                const directLinkObj = danuzData.result.downloadUrls.find(d => d.url && !d.url.includes('t.me'));
-                if (directLinkObj && directLinkObj.url) {
-                    downloadUrl = directLinkObj.url;
-                    usingApi = "DanuZz Server";
-                    console.log("✅ Using DanuZz API Link!");
-                }
-            }
-        } catch (apiErr) {
-            console.log("⚠️ DanuZz API Failed, falling back to original Direct URL...");
-        }
-
-        // 🌟 අනිවාර්යයෙන්ම ලින්ක් එක Text එකක් විදිහට යවනවා
-        let linkMessage = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${qualityStr}\n🌐 *Server:* ${usingApi}\n\n`;
-        linkMessage += `🔗 *Direct Download Link:*\n${downloadUrl}\n\n`;
-        linkMessage += `_💡 මෙය WhatsApp වෙත එවීමට උත්සාහ කරමින් පවතී... ⏳_\n`;
-        linkMessage += `_(WhatsApp Upload එක Fail වුවහොත් හෝ 24KB File එකක් ආවොත්, ඉහත Link එකෙන් බාගත කරගන්න)_\n\n`;
-
-        await client.sendMessage(m.jid, { text: linkMessage }, { quoted: metaQuote });
-        
-        // 🌟 24KB ෆයිල් සහ ෆයිල් සයිස් එක චෙක් කරනවා
+        // ---- Check if it's a real video (content-type) ----
+        let isVideo = false;
         try {
             const headRes = await axios.head(downloadUrl, { timeout: 10000 });
-            
-            // 🔴 24KB (Web Page) බ්ලොක් කිරීම
-            const contentType = headRes.headers['content-type'];
-            if (contentType && contentType.includes('text/html')) {
-                await m.react("❌");
-                return await m.reply(`❌ *අවවාදයයි!* මෙම ලින්ක් එකෙන් ලබා දෙන්නේ වීඩියෝවක් නොව Web Page එකකි (24KB). \nWhatsApp Upload කිරීම නතර කරන ලදී. ඉහත Link එක Browser එකෙන් Open කර Download කරගන්න.`);
-            }
+            const contentType = headRes.headers['content-type'] || '';
+            isVideo = contentType.includes('video') || contentType.includes('application/octet-stream');
+            console.log(`[Cinesubz] Content-Type: ${contentType}, isVideo: ${isVideo}`);
+        } catch (headErr) {
+            console.log("HEAD request failed, attempting upload anyway...");
+            isVideo = true; // assume it's video
+        }
 
+        if (!isVideo) {
+            await m.reply(`⚠️ *The link appears to be a webpage, not a direct video.*\nPlease use the link above to download manually.`);
+            await m.react("⚠️");
+            return;
+        }
+
+        // ---- Check file size ----
+        try {
+            const headRes = await axios.head(downloadUrl, { timeout: 10000 });
             if (headRes && headRes.headers['content-length']) {
                 const sizeMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
-                if (sizeMB > 1950) { 
+                if (sizeMB > 1950) {
                     await m.react("❌");
-                    return await m.reply(`❌ *Error: File එක 2GB වලට වඩා විශාලයි! (${sizeMB.toFixed(2)} MB)*\nWhatsApp හරහා මෙය යැවිය නොහැක.`);
+                    await m.reply(`❌ *File is too large! (${sizeMB.toFixed(2)} MB)*\nPlease use the link above to download.`);
+                    return;
                 }
             }
         } catch (headErr) {
-            console.log("Size/Type check skipped or failed, uploading anyway...");
+            console.log("Size check failed, attempting upload...");
         }
-        
-        const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
-        const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${qualityStr}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
-        // 🌟 ෆයිල් එක යවනවා
+        // ---- Send as WhatsApp document ----
+        const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
+        const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${quality}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
+
         await client.sendMessage(m.jid, {
             document: { url: downloadUrl },
             mimetype: "video/mp4",
-            fileName: `${safeTitle} - ${qualityStr}.mp4`,
+            fileName: `${safeTitle} - ${quality}.mp4`,
             caption: caption
         }, { quoted: metaQuote });
 
         await m.react("✅");
+        await m.reply(`✅ *Download complete!*`);
 
     } catch (err) {
-        console.error("Direct Upload Error:", err);
+        console.error("Download Error:", err);
         await m.react("❌");
-        await m.reply(`❌ බාගත කර ඔබ වෙත එවීමට අපොහොසත් විය. ලින්ක් එක දෝෂ සහිතයි හෝ Expire වී ඇත.`);
+        await m.reply(`❌ *Upload failed.*\n\nPlease use the link above to download your movie.`);
     }
 }
