@@ -1,7 +1,7 @@
 // commands/cinesubz.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
-const cheerio = require("cheerio"); // 🔴 ALUTH: Web page එක ඇතුළට රිංගන්න
+const cheerio = require("cheerio");
 
 if (!global.cinesubzContexts) global.cinesubzContexts = {};
 
@@ -20,7 +20,7 @@ async function sendMediaOrText(client, jid, text, imageUrl, quoted) {
         try {
             return await client.sendMessage(jid, { image: { url: imageUrl }, caption: text }, { quoted });
         } catch (e) {
-            console.error("Thumbnail sending failed, falling back to text:", e);
+            console.error("Thumbnail sending failed:", e);
         }
     }
     return await client.sendMessage(jid, { text: text }, { quoted });
@@ -137,7 +137,7 @@ Sparky({
 });
 
 // ==========================================
-// 3. FETCH QUALITY OPTIONS (HACKER BYPASS)
+// 3. FETCH QUALITY OPTIONS (ULTIMATE HACKER BYPASS)
 // ==========================================
 async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
     const title = selectedMovie.title;
@@ -164,26 +164,48 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
         console.log("CNW API Extract Error:", err.message);
     }
 
-    // 🌟 2. HACKER MOVE: API එක ෆේල් වුණොත් වෙබ්සයිට් එක ඇතුළටම රිංගලා ලින්ක් එක බලෙන් ගන්නවා!
+    // 🌟 2. ULTIMATE HACKER MOVE: API එක ෆේල් වුණොත් බොරු Browser එකකින් රිංගනවා
     if (!baseLink) {
         console.log("⚠️ API එක ෆේල්! Cinesubz වෙබ් අඩවියෙන් බලෙන් ලින්ක් එක ඇදගැනීමට උත්සාහ කරයි...");
         try {
-            // ෆිල්ම් එකේ URL එක හදාගන්නවා
-            let moviePageUrl = selectedMovie.link || selectedMovie.url || `https://cinesubz.co/movies/${movieId}/`;
-            
-            const { data: html } = await axios.get(moviePageUrl, { timeout: 15000 });
-            const $ = cheerio.load(html);
+            // URL එක හරියටම හදාගන්නවා
+            let moviePageUrl = "";
+            if (selectedMovie.url && selectedMovie.url.startsWith('http')) moviePageUrl = selectedMovie.url;
+            else if (selectedMovie.link && selectedMovie.link.startsWith('http')) moviePageUrl = selectedMovie.link;
+            else {
+                let slug = (selectedMovie.title || "").toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                moviePageUrl = `https://cinesubz.co/movies/${slug}/`;
+            }
 
-            // සයිට් එකේ තියෙන හැම ලින්ක් එකක්ම චෙක් කරලා sonic-cloud එක හොයාගන්නවා
-            $('a').each((i, el) => {
-                let href = $(el).attr('href');
-                if (href && (href.includes('sonic-cloud') || href.includes('cinesubz.co/download'))) {
-                    baseLink = href;
-                    return false; // ලින්ක් එක හම්බවුණාම හොයන එක නවත්තනවා
-                }
+            console.log("🔍 Scraping Target:", moviePageUrl);
+
+            // සයිට් එක රවට්ටන්න Fake Browser Passport (User-Agent) එකක් දානවා
+            const { data: html } = await axios.get(moviePageUrl, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+                },
+                timeout: 15000
             });
+
+            // HTML කෝඩ් එක පුරාම sonic-cloud ලින්ක් එකක් තියෙනවද කියලා ඉවෙන් වගේ හොයනවා (Aggressive Regex)
+            const match = html.match(/https?:\/\/[^"']*(?:sonic-cloud\.online|shenaya66\.online)[^"']*/i);
+            
+            if (match) {
+                baseLink = match[0];
+                console.log("🎯 Regex Scanner එකෙන් ලින්ක් එක අහු වුණා:", baseLink);
+            } else {
+                const $ = cheerio.load(html);
+                $('a').each((i, el) => {
+                    let href = $(el).attr('href');
+                    if (href && (href.includes('sonic-cloud') || href.includes('shenaya'))) {
+                        baseLink = href;
+                        return false;
+                    }
+                });
+            }
         } catch (err) {
-            console.log("Direct Scrape Error:", err.message);
+            console.log("❌ Direct Scrape Error (සයිට් එකෙන් බොට්ව එලෙව්වා):", err.message);
         }
     }
 
@@ -239,10 +261,9 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
             console.log("⚠️ DanuZz API Failed, switching to Fallback...");
         }
 
-        // 2. API එක ෆේල් වුණොත්, සයිට් එකේ ලින්ක් එකම ගන්නවා (Fallback)
         if (!downloadUrl) downloadUrl = finalUrl;
 
-        // 3. 24KB ෆයිල් එන එක නවත්තන්න, ලින්ක් එක චෙක් කරනවා
+        // 2. 24KB ෆයිල් එන එක නවත්තන්න, ලින්ක් එක චෙක් කරනවා
         try {
             const headRes = await axios.head(downloadUrl, { timeout: 10000 });
             const contentType = headRes.headers['content-type'];
@@ -278,7 +299,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${actualQuality}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
-        // 4. ෆයිල් එක යවනවා
+        // 3. ෆයිල් එක යවනවා
         await client.sendMessage(m.jid, {
             document: { url: downloadUrl },
             mimetype: "video/mp4",
