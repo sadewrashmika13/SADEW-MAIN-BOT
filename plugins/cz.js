@@ -1,6 +1,7 @@
 // commands/cinesubz.js
 const { Sparky, isPublic } = require("../lib");
 const axios = require("axios");
+const cheerio = require("cheerio"); // 🔴 ALUTH: Web page එක ඇතුළට රිංගන්න
 
 if (!global.cinesubzContexts) global.cinesubzContexts = {};
 
@@ -136,63 +137,84 @@ Sparky({
 });
 
 // ==========================================
-// 3. FETCH QUALITY OPTIONS
+// 3. FETCH QUALITY OPTIONS (HACKER BYPASS)
 // ==========================================
 async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
     const title = selectedMovie.title;
     const movieId = selectedMovie.id;
     const movieImg = selectedMovie.image || selectedMovie.img || selectedMovie.thumbnail;
+    let baseLink = null;
 
     await m.react("⏳");
     await m.reply(`📥 බාගැනීම් විකල්ප සකසමින්: *${title}*...`);
 
+    // 1. පරණ විදිහට CNW API එකෙන් බලනවා
     try {
         const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${movieId}&type=mv`;
         const { data } = await axios.get(extractUrl, { timeout: 15000 });
 
-        if (!data.status || !data.data || data.data.length === 0) {
-            await m.react("❌");
-            return await m.reply(`❌ මෙම චිත්‍රපටය සඳහා බාගැනීම් සබැඳි (Links) හමු නොවිණි.`);
+        if (data && data.status && data.data && data.data.length > 0) {
+            let validLinks = data.data.filter(v => v.link && typeof v.link === 'string' && !v.link.includes('<iframe'));
+            if (validLinks.length > 0) {
+                let directVideo = validLinks.find(v => v.link.includes('sonic-cloud') || v.link.includes('cinesubz')) || validLinks[0];
+                baseLink = directVideo.link;
+            }
         }
-
-        let validLinks = data.data.filter(v => v.link && typeof v.link === 'string' && !v.link.includes('<iframe'));
-
-        if (validLinks.length === 0) {
-            await m.react("❌");
-            return await m.reply(`❌ මෙම චිත්‍රපටයට අදාළ Direct Download Link එකක් සොයාගැනීමට නොහැක. (ඇත්තේ Web Player පමණි)`);
-        }
-
-        let directVideo = validLinks.find(v => v.link.includes('sonic-cloud') || v.link.includes('cinesubz')) || validLinks[0];
-        let baseLink = directVideo.link;
-        
-        if (baseLink.startsWith('//')) {
-            baseLink = 'https:' + baseLink;
-        }
-
-        let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
-        qualMsg += `*1.* 🟢 480p (SD Quality)\n`;
-        qualMsg += `*2.* 🟢 720p (HD Quality)\n`;
-        qualMsg += `*3.* 🟢 1080p (Full HD)\n\n`;
-        qualMsg += `_📌 බාගැනීමට අවශ්‍ය අංකය (1, 2 හෝ 3) මෙම පණිවිඩයට Reply කරන්න._`;
-
-        let sentMsg = await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
-
-        context.step = "quality_select";
-        context.qualityMsgId = sentMsg.key.id;
-        context.baseLink = baseLink;
-        context.movieTitle = title;
-
-        await m.react("🎬");
-
     } catch (err) {
-        console.error("Quality Fetch Error:", err);
-        await m.react("❌");
-        await m.reply(`❌ Quality විකල්ප ලබා ගැනීම අසාර්ථකයි!`);
+        console.log("CNW API Extract Error:", err.message);
     }
+
+    // 🌟 2. HACKER MOVE: API එක ෆේල් වුණොත් වෙබ්සයිට් එක ඇතුළටම රිංගලා ලින්ක් එක බලෙන් ගන්නවා!
+    if (!baseLink) {
+        console.log("⚠️ API එක ෆේල්! Cinesubz වෙබ් අඩවියෙන් බලෙන් ලින්ක් එක ඇදගැනීමට උත්සාහ කරයි...");
+        try {
+            // ෆිල්ම් එකේ URL එක හදාගන්නවා
+            let moviePageUrl = selectedMovie.link || selectedMovie.url || `https://cinesubz.co/movies/${movieId}/`;
+            
+            const { data: html } = await axios.get(moviePageUrl, { timeout: 15000 });
+            const $ = cheerio.load(html);
+
+            // සයිට් එකේ තියෙන හැම ලින්ක් එකක්ම චෙක් කරලා sonic-cloud එක හොයාගන්නවා
+            $('a').each((i, el) => {
+                let href = $(el).attr('href');
+                if (href && (href.includes('sonic-cloud') || href.includes('cinesubz.co/download'))) {
+                    baseLink = href;
+                    return false; // ලින්ක් එක හම්බවුණාම හොයන එක නවත්තනවා
+                }
+            });
+        } catch (err) {
+            console.log("Direct Scrape Error:", err.message);
+        }
+    }
+
+    // 3. ඒත් ලින්ක් එකක් නැත්නම් විතරක් එරර් එක දෙනවා
+    if (!baseLink) {
+        await m.react("❌");
+        return await m.reply(`❌ මෙම චිත්‍රපටයට අදාළ Direct Download Link එකක් සොයාගැනීමට නොහැක. (ඇත්තේ Web Player පමණි)`);
+    }
+
+    if (baseLink.startsWith('//')) {
+        baseLink = 'https:' + baseLink;
+    }
+
+    let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
+    qualMsg += `*1.* 🟢 480p (SD Quality)\n`;
+    qualMsg += `*2.* 🟢 720p (HD Quality)\n`;
+    qualMsg += `*3.* 🟢 1080p (Full HD)\n\n`;
+    qualMsg += `_📌 බාගැනීමට අවශ්‍ය අංකය (1, 2 හෝ 3) මෙම පණිවිඩයට Reply කරන්න._`;
+
+    let sentMsg = await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
+
+    context.step = "quality_select";
+    context.qualityMsgId = sentMsg.key.id;
+    context.baseLink = baseLink;
+    context.movieTitle = title;
+
+    await m.react("🎬");
 }
 
 // ==========================================
-// 4. DOWNLOAD & DIRECT SEND FUNCTION (SMART FALLBACK)
+// 4. DOWNLOAD & DIRECT SEND FUNCTION
 // ==========================================
 async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle, baseLink) {
     try {
@@ -201,7 +223,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         let actualQuality = qualityStr;
         let downloadUrl = null;
 
-        // 🌟 1. මුලින්ම DanuZz API එකෙන් නියම MP4 ලින්ක් එක ගන්න ට්‍රයි කරනවා
+        // 🌟 1. DanuZz API එකෙන් නියම MP4 ලින්ක් එක ගන්නවා
         try {
             const danuzApiUrl = `https://cz-dnuz.vercel.app/download?url=${encodeURIComponent(finalUrl)}`;
             const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 12000 });
@@ -217,24 +239,20 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
             console.log("⚠️ DanuZz API Failed, switching to Fallback...");
         }
 
-        // 🌟 2. API එක ෆේල් වුණොත්, අර කලින් වැඩ කරපු පරණ විදිහට සයිට් එකේ ලින්ක් එකම ගන්නවා (Fallback)
-        if (!downloadUrl) {
-            downloadUrl = finalUrl;
-        }
+        // 2. API එක ෆේල් වුණොත්, සයිට් එකේ ලින්ක් එකම ගන්නවා (Fallback)
+        if (!downloadUrl) downloadUrl = finalUrl;
 
-        // 🌟 3. හැබැයි 24KB ෆයිල් එන එක නවත්තන්න, ලින්ක් එකෙන් දෙන්නේ මොනවද කියලා චෙක් කරනවා
+        // 3. 24KB ෆයිල් එන එක නවත්තන්න, ලින්ක් එක චෙක් කරනවා
         try {
             const headRes = await axios.head(downloadUrl, { timeout: 10000 });
             const contentType = headRes.headers['content-type'];
             const contentLength = headRes.headers['content-length'];
 
-            // 🔴 මෙන්න 24KB එක නවත්තන තැන: ලින්ක් එක Web Page එකක් නම් බාන්නේ නෑ!
             if (contentType && contentType.includes('text/html')) {
                 await m.react("❌");
                 return await m.reply(`❌ මෙම ලින්ක් එකෙන් ලබා දෙන්නේ වීඩියෝවක් නොව Web Page එකකි.\nAPI එකද අසාර්ථක වූ බැවින් මෙය බාගත නොහැක.`);
             }
 
-            // Size එක ලිමිට් එක පනිනවද බලනවා
             if (contentLength) {
                 const sizeInMB = parseInt(contentLength) / (1024 * 1024);
                 if (sizeInMB > 1990) {
@@ -243,7 +261,6 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
                 }
             }
         } catch (hErr) {
-            // ලින්ක් එක වැඩ නැත්නම් Base ලින්ක් එකට මාරු වෙනවා
             if (hErr.response && hErr.response.status === 404) {
                 if (downloadUrl !== baseLink) {
                     downloadUrl = baseLink; 
@@ -261,7 +278,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         const safeTitle = movieTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim();
         const caption = `🎬 *${movieTitle}*\n⚙️ *Quality:* ${actualQuality}\n\n*${BOT_NAME}*\n_${POWERED_BY}_`;
 
-        // 🌟 4. අන්තිමට සුපිරියටම ෆයිල් එක යවනවා
+        // 4. ෆයිල් එක යවනවා
         await client.sendMessage(m.jid, {
             document: { url: downloadUrl },
             mimetype: "video/mp4",
