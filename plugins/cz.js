@@ -109,7 +109,11 @@ Sparky({
     let context = global.cinesubzContexts[m.sender];
     if (!context || !m.quoted) return;
 
-    let number = parseInt(m.text.trim());
+    // 🔴 BUG FIX 1: මැසේජ් එකේ text එකක් තියෙනවද කියලා බලනවා (ස්ටිකර්, ෆොටෝ ආවොත් ක්‍රෑෂ් නොවෙන්න)
+    let rawText = m.text || m.body || "";
+    if (!rawText) return; 
+
+    let number = parseInt(rawText.trim());
     if (isNaN(number)) return;
 
     if (context.step === "movie_select" && m.quoted.key.id === context.searchMsgId) {
@@ -172,9 +176,10 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
         const directVideo = data.data.find(v => v.is_direct_mp4) || data.data[0];
         const baseLink = directVideo.link;
 
-        if (!baseLink) {
+        // 🔴 BUG FIX 2: ලින්ක් එක Iframe එකක්ද කියලා මුලින්ම චෙක් කරනවා
+        if (!baseLink || baseLink.includes('<iframe') || !baseLink.startsWith('http')) {
             await m.react("❌");
-            return await m.reply(`❌ බාගත හැකි මට්ටමේ කිසිදු ලින්ක් එකක් හමු නොවිණි.`);
+            return await m.reply(`❌ *${title}*\nමෙම චිත්‍රපටය සඳහා Direct Download Link එකක් නොමැත.\n(Web Player පමණක් පවතී).`);
         }
 
         let qualMsg = `🎬 *${title}*\n\n📥 *ඔබට අවශ්‍ය Quality එක තෝරන්න:*\n\n`;
@@ -200,7 +205,7 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
 }
 
 // ==========================================
-// 4. DOWNLOAD & DIRECT SEND FUNCTION (DanuZz API + Fallback Logic)
+// 4. DOWNLOAD & DIRECT SEND FUNCTION
 // ==========================================
 async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle, baseLink) {
     try {
@@ -215,9 +220,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
             const danuzApiUrl = `https://cz-dnuz.vercel.app/download?url=${encodeURIComponent(finalUrl)}`;
             const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 15000 });
 
-            // API එක සාර්ථකව වැඩ කරලා, links දුන්නොත්
             if (danuzData && danuzData.success && danuzData.result && danuzData.result.downloadUrls) {
-                // Telegram link එක අතහැරලා, කෙලින්ම බාන්න පුළුවන් mp4 link එක තෝරනවා
                 const directLinkObj = danuzData.result.downloadUrls.find(d => d.url && !d.url.includes('t.me'));
                 if (directLinkObj && directLinkObj.url) {
                     validUrl = directLinkObj.url;
@@ -226,6 +229,12 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
             }
         } catch (apiErr) {
             console.log("⚠️ DanuZz API Failed or Timed out, falling back to default logic.");
+        }
+
+        // 🔴 BUG FIX 3: Download කරන්න කලින් ආයෙත් Iframe එකක්ද කියලා අන්තිම පාරට චෙක් කරනවා
+        if (validUrl.includes('<iframe') || !validUrl.startsWith('http')) {
+            await m.react("❌");
+            return await m.reply(`❌ සමාවෙන්න, මෙය බාගත කිරීමට නොහැකි Embedded Video එකකි.`);
         }
 
         // 2. ලින්ක් එක වැඩද කියලා චෙක් කිරීම සහ Size චෙක් කිරීම
@@ -239,9 +248,8 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
                 }
             }
         } catch (hErr) {
-            // 404 Error එකක් ආවොත් (ලින්ක් එක නැත්නම්) ඔරිජිනල් ලින්ක් එකට මාරු වීම
             if (hErr.response && hErr.response.status === 404) {
-                if (validUrl !== baseLink) {
+                if (validUrl !== baseLink && baseLink.startsWith('http')) {
                     validUrl = baseLink; 
                     actualQuality = "Default Quality";
                     await m.reply(`⚠️ ඉල්ලුම් කළ *${qualityStr}* සංස්කරණය සර්වර් එකේ නොමැත.\n_පවතින එකම සංස්කරණය බාගත වෙමින් පවතී..._`);
