@@ -17,7 +17,7 @@ function getMetaQuote() {
     };
 }
 
-// පින්තූරයක් හෝ ටෙක්ස්ට් එකක් බිඳෙන්නේ නැතිව යැවීමට සකසන ලද සේෆ් ෆන්ක්ෂන් එකක් (Message ID එක Return කරයි)
+// පින්තූරයක් හෝ ටෙක්ස්ට් එකක් බිඳෙන්නේ නැතිව යැවීමට සකසන ලද සේෆ් ෆන්ක්ෂන් එකක්
 async function sendMediaOrText(client, jid, text, imageUrl, quoted) {
     if (imageUrl) {
         try {
@@ -77,10 +77,8 @@ Sparky({
 
         const firstMovieImg = results[0].image || results[0].img || results[0].thumbnail;
         
-        // 🔴 මැසේජ් එක යවලා ඒකේ ID එක අල්ලගන්නවා
         let sentMsg = await sendMediaOrText(client, m.jid, listMsg, firstMovieImg, m);
 
-        // 🔴 මෙමරියේ සේව් කිරීම (Context Saving)
         global.cinesubzContexts[m.sender] = {
             step: "movie_select",
             searchMsgId: sentMsg.key.id,
@@ -114,7 +112,6 @@ Sparky({
     let number = parseInt(m.text.trim());
     if (isNaN(number)) return;
 
-    // ▶️ පියවර 1: චිත්‍රපටය තේරීම (Movie Selection)
     if (context.step === "movie_select" && m.quoted.key.id === context.searchMsgId) {
         if (number >= 1 && number <= context.results.length) {
             const selectedMovie = context.results[number - 1];
@@ -124,7 +121,6 @@ Sparky({
         }
     }
     
-    // ▶️ පියවර 2: Quality එක තේරීම (Quality Selection)
     else if (context.step === "quality_select" && m.quoted.key.id === context.qualityMsgId) {
         if (number >= 1 && number <= 3) {
             let qualityKey = "720p";
@@ -135,7 +131,6 @@ Sparky({
             const baseLink = context.baseLink;
             const movieTitle = context.movieTitle;
 
-            // URL එකේ අකුරු මාරු කරලා Quality එක වෙනස් කිරීම
             let finalUrl = baseLink;
             if (qualityKey === '480p') {
                 finalUrl = baseLink.replace(/(720p|1080p|1080|720)/gi, '480p');
@@ -145,7 +140,6 @@ Sparky({
                 finalUrl = baseLink.replace(/(480p|720p|480|720)/gi, '1080p');
             }
 
-            // වැඩේ ඉවර නිසා මෙමරියෙන් මකා දැමීම
             delete global.cinesubzContexts[m.sender];
 
             await downloadAndSendMovie(client, m, finalUrl, qualityKey, movieTitle, baseLink);
@@ -156,7 +150,7 @@ Sparky({
 });
 
 // ==========================================
-// 3. FETCH QUALITY OPTIONS (රිප්ලයි සිස්ටම් එකට ගැලපෙන ලෙස)
+// 3. FETCH QUALITY OPTIONS 
 // ==========================================
 async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
     const title = selectedMovie.title;
@@ -191,7 +185,6 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
 
         let sentMsg = await sendMediaOrText(client, m.jid, qualMsg, movieImg, m);
 
-        // 🔴 අලුත් රිප්ලයි එක අල්ලන්න මෙමරිය අප්ඩේට් කිරීම
         context.step = "quality_select";
         context.qualityMsgId = sentMsg.key.id;
         context.baseLink = baseLink;
@@ -207,7 +200,7 @@ async function fetchQualityOptionsForReply(client, m, selectedMovie, context) {
 }
 
 // ==========================================
-// 4. DOWNLOAD & DIRECT SEND FUNCTION (Fallback Logic ඇතුළත් කර)
+// 4. DOWNLOAD & DIRECT SEND FUNCTION (DanuZz API + Fallback Logic)
 // ==========================================
 async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle, baseLink) {
     try {
@@ -217,7 +210,25 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
         let validUrl = finalUrl;
         let actualQuality = qualityStr;
 
-        // 1. ලින්ක් එක වැඩද කියලා චෙක් කිරීම සහ Size චෙක් කිරීම
+        // 🌟 1. DANUZZ API - FIRST PRIORITY
+        try {
+            const danuzApiUrl = `https://cz-dnuz.vercel.app/download?url=${encodeURIComponent(finalUrl)}`;
+            const { data: danuzData } = await axios.get(danuzApiUrl, { timeout: 15000 });
+
+            // API එක සාර්ථකව වැඩ කරලා, links දුන්නොත්
+            if (danuzData && danuzData.success && danuzData.result && danuzData.result.downloadUrls) {
+                // Telegram link එක අතහැරලා, කෙලින්ම බාන්න පුළුවන් mp4 link එක තෝරනවා
+                const directLinkObj = danuzData.result.downloadUrls.find(d => d.url && !d.url.includes('t.me'));
+                if (directLinkObj && directLinkObj.url) {
+                    validUrl = directLinkObj.url;
+                    console.log("✅ Using DanuZz API Direct Link!");
+                }
+            }
+        } catch (apiErr) {
+            console.log("⚠️ DanuZz API Failed or Timed out, falling back to default logic.");
+        }
+
+        // 2. ලින්ක් එක වැඩද කියලා චෙක් කිරීම සහ Size චෙක් කිරීම
         try {
             const headRes = await axios.head(validUrl, { timeout: 10000 });
             if (headRes && headRes.headers['content-length']) {
@@ -228,7 +239,7 @@ async function downloadAndSendMovie(client, m, finalUrl, qualityStr, movieTitle,
                 }
             }
         } catch (hErr) {
-            // 2. 404 Error එකක් ආවොත් (ලින්ක් එක නැත්නම්) ඔරිජිනල් ලින්ක් එකට මාරු වීම
+            // 404 Error එකක් ආවොත් (ලින්ක් එක නැත්නම්) ඔරිජිනල් ලින්ක් එකට මාරු වීම
             if (hErr.response && hErr.response.status === 404) {
                 if (validUrl !== baseLink) {
                     validUrl = baseLink; 
